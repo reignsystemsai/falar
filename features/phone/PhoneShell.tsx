@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AudioSession } from '@livekit/react-native';
 import { supabase } from '../../lib/supabase';
+import { getLiveKitToken } from '../../lib/livekit';
 import { PhoneTabs } from './PhoneTabs';
 import { addContact, addRecentCall, loadContacts, loadRecents, toggleFavorite } from './phoneStorage';
 import { Contact, PhoneTabKey, RecentCall } from './phoneTypes';
 import { ContactsScreen } from './screens/ContactsScreen';
 import { FavoritesScreen } from './screens/FavoritesScreen';
+import { InCallScreen } from './screens/InCallScreen';
 import { KeypadScreen } from './screens/KeypadScreen';
 import { RecentsScreen } from './screens/RecentsScreen';
 
@@ -16,10 +19,22 @@ function normalizeVisibleCode(value: string): string {
 export function PhoneShell() {
   const [activeTab, setActiveTab] = useState<PhoneTabKey>('keypad');
   const [code, setCode] = useState('');
+  const [notice, setNotice] = useState('');
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [recents, setRecents] = useState<RecentCall[]>([]);
   const [contactName, setContactName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+
+  const [currentCall, setCurrentCall] = useState<{
+    code: string;
+    roomName: string;
+    label: string;
+    phase: 'calling' | 'connecting' | 'active' | 'error';
+    startedAtIso: string;
+    serverUrl?: string;
+    token?: string;
+    errorMessage?: string;
+  } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -71,31 +86,132 @@ export function PhoneShell() {
     setActiveTab('keypad');
   };
 
-  const callFromKeypad = async (numericCode: string) => {
-    const started = new Date();
-    const ended = new Date();
-    const knownContact = contactsByNumber.get(numericCode);
+  const startCall = async (numericCode: string) => {
+    if (numericCode.length < 3) {
+      return;
+    }
 
+    setNotice('');
+
+    const knownContact = contactsByNumber.get(numericCode);
+    const startedAtIso = new Date().toISOString();
+    const roomName = `speak-${numericCode}`;
+
+    setCurrentCall({
+      code: numericCode,
+      roomName,
+      label: knownContact?.name ?? `Code ${numericCode}`,
+      phase: 'calling',
+      startedAtIso,
+    });
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setCurrentCall({
+        code: numericCode,
+        roomName,
+        label: knownContact?.name ?? `Code ${numericCode}`,
+        phase: 'error',
+        startedAtIso,
+        errorMessage: 'Please sign in.',
+      });
+      await supabase.auth.signOut();
+      return;
+    }
+
+    try {
+      const token = await getLiveKitToken(roomName);
+      await AudioSession.startAudioSession();
+
+      setCurrentCall({
+        code: numericCode,
+        roomName,
+        label: knownContact?.name ?? `Code ${numericCode}`,
+        phase: 'connecting',
+        startedAtIso,
+        serverUrl: token.serverUrl,
+        token: token.participantToken,
+      });
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : '';
+      const message =
+        rawMessage.includes('Supabase session missing')
+          ? 'Please sign in.'
+          : rawMessage.includes('Unable to')
+          ? 'Unable to start call.'
+          : 'Connection failed.';
+
+      setCurrentCall({
+        code: numericCode,
+        roomName,
+        label: knownContact?.name ?? `Code ${numericCode}`,
+        phase: 'error',
+        startedAtIso,
+        errorMessage: message,
+      });
+    }
+  };
+
+  const finishCall = async (
+    number: string,
+    startedAtIso: string,
+    durationSeconds: number,
+    result: 'completed' | 'failed' | 'canceled'
+  ) => {
+    const knownContact = contactsByNumber.get(number);
     const updatedRecents = await addRecentCall({
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      number: numericCode,
+      number,
       contactName: knownContact?.name,
-      startedAt: started.toISOString(),
-      endedAt: ended.toISOString(),
-      durationSeconds: 0,
-      result: 'canceled',
+      startedAt: startedAtIso,
+      endedAt: new Date().toISOString(),
+      durationSeconds,
+      result,
     });
 
     setRecents(updatedRecents);
+    setCurrentCall(null);
+
+    if (result === 'failed') {
+      setNotice('Connection failed.');
+      return;
+    }
+
+    if (result === 'completed') {
+      setNotice('Call ended.');
+      return;
+    }
+
+    setNotice('Call ended.');
   };
+
+  if (currentCall) {
+    return (
+      <InCallScreen
+        label={currentCall.label}
+        code={currentCall.code}
+        serverUrl={currentCall.serverUrl}
+        token={currentCall.token}
+        phase={currentCall.phase}
+        errorMessage={currentCall.errorMessage}
+        startedAtIso={currentCall.startedAtIso}
+        onFinish={(result, durationSeconds) =>
+          finishCall(currentCall.code, currentCall.startedAtIso, durationSeconds, result)
+        }
+      />
+    );
+  }
 
   const renderScreen = () => {
     if (activeTab === 'favorites') {
-      return <FavoritesScreen contacts={contacts} onCall={placeFromList} />;
+      return <FavoritesScreen contacts={contacts} onCall={startCall} />;
     }
 
     if (activeTab === 'recents') {
-      return <RecentsScreen recents={recents} onRedial={placeFromList} />;
+      return <RecentsScreen recents={recents} onRedial={startCall} />;
     }
 
     if (activeTab === 'contacts') {
@@ -117,7 +233,7 @@ export function PhoneShell() {
       <KeypadScreen
         code={code}
         onChangeCode={value => setCode(normalizeVisibleCode(value))}
-        onCall={callFromKeypad}
+        onCall={startCall}
       />
     );
   };
@@ -130,6 +246,12 @@ export function PhoneShell() {
           <Text style={styles.signOut}>Sign Out</Text>
         </TouchableOpacity>
       </View>
+
+      {notice ? (
+        <View style={styles.noticeWrap}>
+          <Text style={styles.noticeText}>{notice}</Text>
+        </View>
+      ) : null}
 
       <View style={styles.content}>{renderScreen()}</View>
 
@@ -161,5 +283,14 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  noticeWrap: {
+    backgroundColor: '#f3f4f6',
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  noticeText: {
+    color: '#334155',
+    fontSize: 13,
   },
 });
