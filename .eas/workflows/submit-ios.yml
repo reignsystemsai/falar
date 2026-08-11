@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+defaults:
+  tools:
+    node: '20'
+
 jobs:
   build_ios:
     name: Build iOS Production
