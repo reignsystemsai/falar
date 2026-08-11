@@ -94,9 +94,7 @@ Deno.serve(async (req: Request) => {
       : typeof body.room === 'string' && body.room.trim()
       ? body.room.trim()
       : 'default-room';
-    const identity: string = typeof body.identity === 'string' && body.identity.trim()
-      ? body.identity.trim()
-      : `guest-${crypto.randomUUID()}`;
+    const identity = userData.user.id;
 
     const token = new AccessToken(apiKey, apiSecret, {
       identity,
