@@ -6,7 +6,7 @@ import { DialPad } from '../components/DialPad';
 interface KeypadScreenProps {
   code: string;
   onChangeCode: (value: string) => void;
-  onCall: () => void;
+  onCall: (numericCode: string) => void;
 }
 
 function numericDigitsCount(value: string): number {
@@ -14,13 +14,14 @@ function numericDigitsCount(value: string): number {
 }
 
 export function KeypadScreen({ code, onChangeCode, onCall }: KeypadScreenProps) {
+  const numericCode = code.replace(/\D/g, '');
   const validCode = numericDigitsCount(code) >= 3;
 
   return (
     <View style={styles.container}>
       <Text style={styles.label}>Speak Call Code</Text>
       <Text style={styles.value}>{code || 'Enter code'}</Text>
-      <Text style={styles.room}>Room: {numericDigitsCount(code) >= 1 ? `speak-${code.replace(/\D/g, '')}` : 'speak-<code>'}</Text>
+      <Text style={styles.room}>Room: {numericDigitsCount(code) >= 1 ? `speak-${numericCode}` : 'speak-<code>'}</Text>
 
       <View style={styles.padWrap}>
         <DialPad
@@ -29,7 +30,7 @@ export function KeypadScreen({ code, onChangeCode, onCall }: KeypadScreenProps) 
         />
       </View>
 
-      <CallButton disabled={!validCode} onPress={onCall} />
+      <CallButton disabled={!validCode} onPress={() => onCall(numericCode)} />
     </View>
   );
 }
