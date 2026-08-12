@@ -23,7 +23,7 @@ import { SpeakPhoneTheme } from './speakPhoneTheme';
 import { supabase } from '../../lib/supabase';
 import { useSpeakCall } from './calls/SpeakCallProvider';
 import { cleanContactLabel, normalizeSpeakNumber } from './calls/phoneFormatting';
-import { ensureSpeakDiscoveryProfile, hasCompleteSpeakDiscoveryProfile } from '../auth/ensureSpeakDiscoveryProfile';
+import { hasCompleteSpeakDiscoveryProfile } from '../auth/ensureSpeakDiscoveryProfile';
 
 type ContactPhoneShape = {
   number?: string | null;
@@ -112,6 +112,7 @@ export function PhoneShell() {
   const [registrationName, setRegistrationName] = useState('');
   const [registrationPhone, setRegistrationPhone] = useState('');
   const [registrationError, setRegistrationError] = useState('');
+  const [savingRegistration, setSavingRegistration] = useState(false);
 
   const [activeDuration, setActiveDuration] = useState(0);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -644,7 +645,58 @@ export function PhoneShell() {
   };
 
   const completeSpeakRegistration = async () => {
-    setRegistrationError('Registration save is required in the next step.');
+    if (savingRegistration) {
+      return;
+    }
+
+    const displayName = registrationName.trim();
+    if (!displayName) {
+      setRegistrationError('Name is required.');
+      return;
+    }
+
+    const normalizedPhone = normalizeSpeakNumber(registrationPhone);
+    if (!normalizedPhone) {
+      setRegistrationError('Phone must include country code, for example +1 555 123 4567.');
+      return;
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      setRegistrationError('Could not identify the current Speak user.');
+      return;
+    }
+
+    setSavingRegistration(true);
+    setRegistrationError('');
+
+    const { error } = await supabase.from('speak_profiles').upsert(
+      {
+        user_id: userId,
+        display_name: displayName,
+        phone_e164: normalizedPhone,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: 'user_id',
+      }
+    );
+
+    setSavingRegistration(false);
+
+    if (error) {
+      setRegistrationError(error.message);
+      return;
+    }
+
+    setProfileName(displayName);
+    setProfilePhone(normalizedPhone);
+    setNeedsRegistration(false);
+    setRegistrationError('');
   };
 
   const handleOutgoingBack = async () => {
@@ -1063,8 +1115,14 @@ export function PhoneShell() {
                 keyboardType="phone-pad"
               />
 
-              <TouchableOpacity style={styles.profileSaveButton} onPress={() => void completeSpeakRegistration()}>
-                <Text style={styles.profileSaveText}>Join Speak</Text>
+              <TouchableOpacity
+                style={styles.profileSaveButton}
+                onPress={() => {
+                  void completeSpeakRegistration();
+                }}
+                disabled={savingRegistration}
+              >
+                <Text style={styles.profileSaveText}>{savingRegistration ? 'Joining...' : 'Join Speak'}</Text>
               </TouchableOpacity>
 
               {registrationError ? <Text style={styles.registrationOverlayError}>{registrationError}</Text> : null}
