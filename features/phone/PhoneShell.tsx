@@ -452,13 +452,11 @@ export function PhoneShell() {
         !didShowContactsDeniedRef.current
       ) {
         didShowContactsDeniedRef.current = true;
-        Alert.alert(
-          'Contacts permission needed',
-          'Allow contacts access in Settings so Speak can import your iPhone contacts.'
-        );
+        setNotice('Allow contacts access in Settings so Speak can import your iPhone contacts.');
+        return;
       }
 
-      Alert.alert('Contacts unavailable', 'Speak could not import your contacts.');
+      setNotice('Speak could not import your contacts right now.');
     } finally {
       setLoadingContactPicker(false);
     }
