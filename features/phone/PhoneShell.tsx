@@ -263,7 +263,7 @@ export function PhoneShell() {
       }))
     );
 
-    setContacts(current => mergeContacts(nextContacts, current));
+    setContacts(nextContacts);
     setNotice('');
   };
 
@@ -462,6 +462,9 @@ export function PhoneShell() {
         return;
       }
     }
+
+    await loadContactsFromSupabase();
+    setNotice(`Imported ${importedContacts.length} contact${importedContacts.length === 1 ? '' : 's'}.`);
   };
 
   const openContactPicker = async () => {
