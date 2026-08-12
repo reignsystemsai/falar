@@ -1,4 +1,5 @@
 import { Contact, ContactField } from 'expo-contacts';
+import { Camera } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -102,6 +103,8 @@ export function PhoneShell() {
 
   const [activeDuration, setActiveDuration] = useState(0);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const didShowMediaDeniedRef = useRef(false);
+  const didShowContactsDeniedRef = useRef(false);
   const screen = stack[stack.length - 1] || 'home';
 
   useEffect(() => {
@@ -442,6 +445,19 @@ export function PhoneShell() {
       await importIphoneContacts();
     } catch (error) {
       console.warn('Bulk contact import failed.', error);
+
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      if (
+        (message.includes('permission') || message.includes('denied')) &&
+        !didShowContactsDeniedRef.current
+      ) {
+        didShowContactsDeniedRef.current = true;
+        Alert.alert(
+          'Contacts permission needed',
+          'Allow contacts access in Settings so Speak can import your iPhone contacts.'
+        );
+      }
+
       Alert.alert('Contacts unavailable', 'Speak could not import your contacts.');
     } finally {
       setLoadingContactPicker(false);
@@ -487,7 +503,40 @@ export function PhoneShell() {
     pushScreen(next);
   };
 
+  const ensureMediaPermissions = async (): Promise<boolean> => {
+    const micStatus = await Camera.getMicrophonePermissionsAsync();
+    const cameraStatus = await Camera.getCameraPermissionsAsync();
+
+    let finalMic = micStatus;
+    let finalCamera = cameraStatus;
+
+    if (micStatus.status === 'undetermined') {
+      finalMic = await Camera.requestMicrophonePermissionsAsync();
+    }
+
+    if (cameraStatus.status === 'undetermined') {
+      finalCamera = await Camera.requestCameraPermissionsAsync();
+    }
+
+    const blocked = finalMic.status !== 'granted' || finalCamera.status !== 'granted';
+
+    if (blocked && !didShowMediaDeniedRef.current) {
+      didShowMediaDeniedRef.current = true;
+      Alert.alert(
+        'Permissions needed',
+        'Allow camera and microphone in Settings to use Speak calling media features.'
+      );
+    }
+
+    return !blocked;
+  };
+
   const startSpeakCallFromContact = async (contact: SpeakContact) => {
+    const readyForMedia = await ensureMediaPermissions();
+    if (!readyForMedia) {
+      return;
+    }
+
     setSelectedContact(contact);
 
     await startCall({
@@ -832,7 +881,14 @@ export function PhoneShell() {
           goHome();
         }}
         onAnswer={() => {
-          void acceptCall();
+          void (async () => {
+            const readyForMedia = await ensureMediaPermissions();
+            if (!readyForMedia) {
+              return;
+            }
+
+            await acceptCall();
+          })();
         }}
       />
     ) : phase === 'outgoing' ? (

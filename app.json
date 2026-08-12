@@ -13,8 +13,9 @@
       "bitcode": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSContactsUsageDescription": "Speak uses your contacts so you can choose people to call.",
-        "NSMicrophoneUsageDescription": "Speak uses your microphone for voice calls with other Speak users."
+        "NSContactsUsageDescription": "Speak uses your contacts to find people you know and connect them with Speak.",
+        "NSMicrophoneUsageDescription": "Speak uses your microphone for voice calls and interpretation.",
+        "NSCameraUsageDescription": "Speak uses your camera for video calls, QR connections, and media capture."
       }
     },
     "android": {
