@@ -1,4 +1,4 @@
-import { Contact } from 'expo-contacts';
+import { Contact, ContactField } from 'expo-contacts';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -38,7 +38,16 @@ type SpeakContact = {
   id: string;
   name: string;
   number: ContactNumberOption;
+  sourceContactId?: string;
   favorite: boolean;
+};
+
+type SavedContactRow = {
+  id: string;
+  display_name: string;
+  phone_numbers: string[] | null;
+  normalized_phone_numbers: string[] | null;
+  source_contact_id: string | null;
 };
 
 type PhoneScreen =
@@ -217,26 +226,58 @@ export function PhoneShell() {
     Alert.alert('Saved', 'My Speak Profile updated.');
   };
 
-  const saveSelectedContact = async (contactName: string, numbers: string[]) => {
-    try {
-      const userId = await getUserId();
-      if (!userId) return;
-
-      const uniqueNumbers = [...new Set(numbers.filter(Boolean))];
-
-      const { error } = await supabase.from('saved_contacts').insert({
-        user_id: userId,
-        display_name: contactName,
-        phone_numbers: uniqueNumbers,
-      });
-
-      if (error) {
-        throw error;
-      }
-    } catch (error) {
-      console.warn('Unable to persist selected contact.', error);
-      setNotice('Could not save contact. Calling is still available.');
+  const loadContactsFromSupabase = async () => {
+    const userId = await getUserId();
+    if (!userId) {
+      return;
     }
+
+    const { data, error } = await supabase
+      .from('saved_contacts')
+      .select('id, display_name, phone_numbers, normalized_phone_numbers, source_contact_id')
+      .eq('user_id', userId)
+      .order('display_name', { ascending: true });
+
+    if (error) {
+      console.warn('Unable to load saved contacts from Supabase.', error);
+      setNotice('Could not load saved contacts.');
+      return;
+    }
+
+    const rows = (data as SavedContactRow[] | null) ?? [];
+    const nextContacts: SpeakContact[] = [];
+
+    for (const row of rows) {
+      const displayName = row.display_name || 'Unknown Contact';
+      const readableNumbers = Array.isArray(row.phone_numbers) ? row.phone_numbers : [];
+      const normalizedNumbers = Array.isArray(row.normalized_phone_numbers)
+        ? row.normalized_phone_numbers
+        : [];
+
+      const total = Math.max(readableNumbers.length, normalizedNumbers.length);
+      for (let index = 0; index < total; index += 1) {
+        const readable = readableNumbers[index] || normalizedNumbers[index] || '';
+        const normalized = normalizedNumbers[index] || normalizeContactNumber(readable);
+
+        if (!readable || !normalized) {
+          continue;
+        }
+
+        nextContacts.push({
+          id: `${row.id}-${index}`,
+          sourceContactId: row.source_contact_id || row.id,
+          name: displayName,
+          number: {
+            rawNumber: normalized,
+            displayNumber: readable,
+            label: 'Mobile',
+          },
+          favorite: false,
+        });
+      }
+    }
+
+    setContacts(nextContacts);
   };
 
   const normalizeContactNumber = (value: string): string | null => {
@@ -281,6 +322,7 @@ export function PhoneShell() {
       id: contactId,
       name,
       number: option,
+      sourceContactId: contactId,
       favorite: contacts.find(item => item.id === contactId)?.favorite ?? false,
     };
 
@@ -293,7 +335,95 @@ export function PhoneShell() {
     });
 
     setSelectedContact(nextContact);
-    void saveSelectedContact(name, [option.rawNumber]);
+  };
+
+  useEffect(() => {
+    void loadContactsFromSupabase();
+  }, []);
+
+  useEffect(() => {
+    if (screen === 'contacts') {
+      void loadContactsFromSupabase();
+    }
+  }, [screen]);
+
+  const importIphoneContacts = async () => {
+    const userId = await getUserId();
+    if (!userId) {
+      Alert.alert('Unavailable', 'Could not identify the current Speak user.');
+      return;
+    }
+
+    const rows: Array<{
+      user_id: string;
+      source_contact_id: string;
+      display_name: string;
+      phone_numbers: string[];
+      normalized_phone_numbers: string[];
+      updated_at: string;
+    }> = [];
+
+    const fields = [ContactField.FULL_NAME, ContactField.PHONES] as const;
+    const limit = 75;
+    let offset = 0;
+
+    for (;;) {
+      const page = await Contact.getAllDetails(fields, { limit, offset });
+      if (!page.length) {
+        break;
+      }
+
+      for (let index = 0; index < page.length; index += 1) {
+        const entry = page[index];
+        const fullName = (entry.fullName || '').trim();
+        const displayName = fullName || 'Unknown Contact';
+        const sourceContactId = String(entry.id || `${offset + index}`);
+        const phones = Array.isArray(entry.phones) ? (entry.phones as ContactPhoneShape[]) : [];
+
+        const uniqueReadable = [...new Set(phones.map(phone => (phone.number || '').trim()).filter(Boolean))];
+        const uniqueNormalized = [
+          ...new Set(phones.map(phone => normalizeContactNumber(phone.number || '')).filter(Boolean) as string[]),
+        ];
+
+        if (!uniqueReadable.length || !uniqueNormalized.length) {
+          continue;
+        }
+
+        rows.push({
+          user_id: userId,
+          source_contact_id: sourceContactId,
+          display_name: displayName,
+          phone_numbers: uniqueReadable,
+          normalized_phone_numbers: uniqueNormalized,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      offset += page.length;
+      if (page.length < limit) {
+        break;
+      }
+    }
+
+    if (!rows.length) {
+      setNotice('No accessible contacts with phone numbers were found.');
+      return;
+    }
+
+    const batchSize = 75;
+    for (let start = 0; start < rows.length; start += batchSize) {
+      const slice = rows.slice(start, start + batchSize);
+      const { error } = await supabase.from('saved_contacts').upsert(slice, {
+        onConflict: 'user_id,source_contact_id',
+      });
+
+      if (error) {
+        throw error;
+      }
+    }
+
+    await loadContactsFromSupabase();
+    setNotice(`Imported ${rows.length} contact${rows.length === 1 ? '' : 's'} from iPhone.`);
   };
 
   const openContactPicker = async () => {
@@ -301,45 +431,18 @@ export function PhoneShell() {
     setLoadingContactPicker(true);
 
     try {
-      const picked = await Contact.presentPicker();
+      const supportsAccessPicker =
+        typeof (Contact as unknown as { presentAccessPicker?: () => Promise<Contact[]> }).presentAccessPicker ===
+        'function';
 
-      if (!picked) {
-        return;
+      if (supportsAccessPicker) {
+        await (Contact as unknown as { presentAccessPicker: () => Promise<Contact[]> }).presentAccessPicker();
       }
 
-      const [displayName, phones] = await Promise.all([picked.getFullName(), picked.getPhones()]);
-
-      const options = extractNumbers((phones as ContactPhoneShape[]) ?? []);
-      const contactName = (displayName || '').trim() || 'Unknown Contact';
-
-      if (options.length === 0) {
-        Alert.alert('No phone number', 'This contact has no phone number.');
-        return;
-      }
-
-      if (options.length === 1) {
-        applyChosenNumber(picked.id, contactName, options[0]);
-        pushScreen('detail');
-        return;
-      }
-
-      Alert.alert(
-        contactName,
-        'Which number do you want to use?',
-        [
-          ...options.map(option => ({
-            text: `${option.label || 'Mobile'} ${option.displayNumber}`,
-            onPress: () => {
-              applyChosenNumber(picked.id, contactName, option);
-              pushScreen('detail');
-            },
-          })),
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
+      await importIphoneContacts();
     } catch (error) {
-      console.warn('Contact picker failed.', error);
-      Alert.alert('Contacts unavailable', 'Speak could not open your contacts.');
+      console.warn('Bulk contact import failed.', error);
+      Alert.alert('Contacts unavailable', 'Speak could not import your contacts.');
     } finally {
       setLoadingContactPicker(false);
     }
@@ -546,7 +649,7 @@ export function PhoneShell() {
         }}
         disabled={loadingContactPicker}
       >
-        <Ionicons name="add" size={28} color={colors.text} />
+        <Ionicons name={loadingContactPicker ? 'hourglass-outline' : 'add'} size={26} color={colors.text} />
       </TouchableOpacity>
     </View>
   );
