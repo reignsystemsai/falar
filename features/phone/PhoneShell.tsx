@@ -936,6 +936,9 @@ export function PhoneShell() {
     ) : phase === 'outgoing' ? (
       <OutgoingCallScreen
         contact={{ name: currentCall.contactName, number: currentCall.contactNumber }}
+        callId={currentCall.id}
+        recipientUserId={currentCall.calleeId}
+        callStatus={currentCall.status}
         onBack={() => {
           void handleOutgoingBack();
         }}

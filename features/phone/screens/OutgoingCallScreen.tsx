@@ -12,15 +12,23 @@ type SpeakContact = {
 
 type OutgoingCallScreenProps = {
   contact: SpeakContact;
+  callId: string;
+  recipientUserId: string;
+  callStatus: 'ringing' | 'accepted' | 'declined' | 'ended' | 'failed';
   onBack: () => void;
   onEndCall: () => void;
 };
 
 export function OutgoingCallScreen({
   contact,
+  callId,
+  recipientUserId,
+  callStatus,
   onBack,
   onEndCall,
 }: OutgoingCallScreenProps) {
+  const statusLabel = callStatus === 'ringing' ? 'Calling...' : callStatus;
+
   return (
     <View style={styles.container}>
       <View style={styles.topRow}>
@@ -44,21 +52,11 @@ export function OutgoingCallScreen({
 
       <Text style={styles.name}>{contact.name}</Text>
       <Text style={styles.number}>{contact.number}</Text>
-      <Text style={styles.stateText}>Calling...</Text>
+      <Text style={styles.stateText}>{statusLabel}</Text>
 
-      <View style={styles.controlsRow}>
-        <TouchableOpacity style={styles.controlButton}>
-          <Ionicons name="mic-off" size={18} color={colors.secondary} />
-          <Text style={styles.controlLabel}>Mute</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.controlButton}>
-          <Ionicons name="volume-high" size={18} color={colors.secondary} />
-          <Text style={styles.controlLabel}>Speaker</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.controlButton}>
-          <Ionicons name="keypad" size={18} color={colors.secondary} />
-          <Text style={styles.controlLabel}>Keypad</Text>
-        </TouchableOpacity>
+      <View style={styles.metaWrap}>
+        <Text style={styles.metaText}>Call ID: {callId}</Text>
+        <Text style={styles.metaText}>Recipient: {recipientUserId}</Text>
       </View>
 
       <TouchableOpacity style={styles.endButton} onPress={onEndCall}>
@@ -170,24 +168,18 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '600',
   },
-  controlsRow: {
-    marginTop: 26,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  controlButton: {
-    flex: 1,
-    minHeight: 66,
-    borderRadius: radius.medium,
+  metaWrap: {
+    marginTop: 20,
+    alignSelf: 'stretch',
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: radius.medium,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     gap: 6,
   },
-  controlLabel: {
+  metaText: {
     color: colors.secondary,
     fontSize: 12,
   },
