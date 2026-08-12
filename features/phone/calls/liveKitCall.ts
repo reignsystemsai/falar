@@ -33,6 +33,12 @@ export async function connectSpeakRoom(
       dynacast: true,
     });
 
+  // Default to the earpiece so two nearby phones don't blast each other's
+  // mic through the loudspeaker, which is the source of the close-range
+  // feedback/metallic artifacts.
+  await AudioSession.configureAudio({
+    ios: { defaultOutput: 'earpiece' },
+  });
   await AudioSession.startAudioSession();
 
   await room.connect(
