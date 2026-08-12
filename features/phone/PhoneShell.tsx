@@ -528,8 +528,8 @@ export function PhoneShell() {
         {subtitle ? <Text style={styles.headerSubtitle}>{subtitle}</Text> : null}
       </View>
 
-      <TouchableOpacity style={styles.iconButton} onPress={goHome}>
-        <Ionicons name="home" size={18} color={colors.secondary} />
+      <TouchableOpacity style={styles.iconButton} onPress={() => pushScreen('profile')}>
+        <Ionicons name="ellipsis-horizontal" size={18} color={colors.secondary} />
       </TouchableOpacity>
     </View>
   );
@@ -551,10 +551,6 @@ export function PhoneShell() {
         </Text>
       </View>
 
-      <TouchableOpacity style={styles.favoriteButton} onPress={() => toggleFavorite(contact)}>
-        <Ionicons name={contact.favorite ? 'star' : 'star-outline'} size={16} color={colors.secondary} />
-      </TouchableOpacity>
-
       <TouchableOpacity
         style={styles.contactCallIconButton}
         onPress={() => {
@@ -569,6 +565,9 @@ export function PhoneShell() {
   const homeView = (
     <View style={styles.homePanel}>
       <View style={styles.homeTopRow}>
+        <TouchableOpacity style={styles.menuButton} onPress={() => pushScreen('contacts')}>
+          <Ionicons name="call-outline" size={18} color={colors.secondary} />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.menuButton} onPress={() => pushScreen('profile')}>
           <Ionicons name="menu" size={20} color={colors.secondary} />
         </TouchableOpacity>
@@ -577,11 +576,6 @@ export function PhoneShell() {
       <Text style={styles.homeLogo}>S</Text>
       <Text style={styles.homeTitle}>Speak</Text>
       <Text style={styles.homeTagline}>The world speaks here.</Text>
-
-      <TouchableOpacity style={styles.profileButton} onPress={() => pushScreen('profile')}>
-        <Ionicons name="person-circle-outline" size={16} color={colors.secondary} />
-        <Text style={styles.profileButtonText}>My Speak Profile</Text>
-      </TouchableOpacity>
 
       <View style={styles.readyRing}>
         <View style={styles.readyRingInner}>
@@ -598,13 +592,18 @@ export function PhoneShell() {
 
       <Text style={styles.languagesTitle}>Speak languages</Text>
       <View style={styles.languageRow}>
+        <Ionicons name="globe-outline" size={16} color={colors.secondary} />
         <Text style={styles.languageText}>English</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.secondary} />
       </View>
       <View style={styles.languageRow}>
+        <Ionicons name="globe-outline" size={16} color={colors.secondary} />
         <Text style={styles.languageText}>Spanish</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.secondary} />
       </View>
 
       <TouchableOpacity style={styles.speakNowButton} onPress={() => pushScreen('contacts')}>
+        <Ionicons name="mic" size={18} color={colors.text} />
         <Text style={styles.speakNowText}>Speak Now</Text>
       </TouchableOpacity>
     </View>
@@ -612,10 +611,18 @@ export function PhoneShell() {
 
   const contactsView = (
     <View style={styles.panel}>
-      {renderHeader('Speak')}
+      <View style={styles.contactsTopRow}>
+        <View style={styles.contactsBrandRow}>
+          <Text style={styles.contactsBrandS}>S</Text>
+          <Text style={styles.contactsBrandText}>Speak</Text>
+        </View>
+        <TouchableOpacity style={styles.contactHeadIcon} onPress={() => pushScreen('keypad')}>
+          <Ionicons name="call-outline" size={18} color={colors.secondary} />
+        </TouchableOpacity>
+      </View>
 
       <Text style={styles.contactsTitle}>Contacts</Text>
-      <Text style={styles.contactsSubtitle}>Imported iPhone contacts available in Speak.</Text>
+      <Text style={styles.contactsSubtitle}>Find someone and start a call.</Text>
 
       <View style={styles.searchWrap}>
         <Ionicons name="search" size={16} color={colors.secondary} />
@@ -626,6 +633,9 @@ export function PhoneShell() {
           placeholderTextColor={colors.secondary}
           style={styles.searchInput}
         />
+        <TouchableOpacity>
+          <Ionicons name="options-outline" size={16} color={colors.secondary} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.segment}>
@@ -659,8 +669,8 @@ export function PhoneShell() {
       {renderHeader('Speak')}
 
       <Text style={styles.detailEyebrow}>CONTACT DETAIL</Text>
-      <Text style={styles.detailTitle}>Ready to call</Text>
-      <Text style={styles.detailSubtitle}>Tap the blue call control to start a Speak voice call.</Text>
+      <Text style={styles.detailTitle}>Ready to Call.</Text>
+      <Text style={styles.detailSubtitle}>Tap the button below to start a voice call immediately.</Text>
 
       <View style={styles.detailCard}>
         <View style={styles.detailAvatarWrap}>
@@ -668,7 +678,18 @@ export function PhoneShell() {
         </View>
         <Text style={styles.detailName}>{selectedContact.name}</Text>
         <Text style={styles.detailNumber}>{selectedContact.number.displayNumber}</Text>
-        <Text style={styles.detailLabel}>{cleanContactLabel(selectedContact.number.label)}</Text>
+        <Text style={styles.detailLabel}>{cleanContactLabel(selectedContact.number.label)} GMT -5</Text>
+
+        <View style={styles.detailInfoRow}>
+          <View style={styles.detailInfoPill}>
+            <Ionicons name="location-outline" size={13} color={colors.secondary} />
+            <Text style={styles.detailInfoText}>Colombia</Text>
+          </View>
+          <View style={styles.detailInfoPill}>
+            <Ionicons name="cellular-outline" size={13} color={colors.secondary} />
+            <Text style={styles.detailInfoText}>Good Connection</Text>
+          </View>
+        </View>
       </View>
 
       <TouchableOpacity
@@ -681,6 +702,17 @@ export function PhoneShell() {
           <Ionicons name="call" size={34} color={colors.text} />
         </View>
       </TouchableOpacity>
+
+      <View style={styles.detailActionsRow}>
+        <TouchableOpacity style={styles.detailActionButton}>
+          <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.secondary} />
+          <Text style={styles.detailActionText}>Message</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.detailActionButton}>
+          <Ionicons name="videocam-outline" size={14} color={colors.secondary} />
+          <Text style={styles.detailActionText}>Video Call</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   ) : (
     <EmptyState title="No contact selected" message="Choose a contact to start a call." />
@@ -842,26 +874,26 @@ export function PhoneShell() {
         {content}
       </View>
 
-      {screen !== 'home' ? (
-        <View style={styles.tabsWrap}>
-          <TouchableOpacity style={styles.tabButton} onPress={() => onTabPress('favorites')}>
-            <Ionicons name="star-outline" size={18} color={screen === 'favorites' ? colors.text : colors.secondary} />
-            <Text style={[styles.tabLabel, screen === 'favorites' && styles.tabLabelActive]}>Favorites</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabButton} onPress={() => onTabPress('recents')}>
-            <Ionicons name="time-outline" size={18} color={screen === 'recents' ? colors.text : colors.secondary} />
-            <Text style={[styles.tabLabel, screen === 'recents' && styles.tabLabelActive]}>Recents</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabButton} onPress={() => onTabPress('contacts')}>
-            <Ionicons name="people-outline" size={18} color={screen === 'contacts' || screen === 'detail' ? colors.text : colors.secondary} />
-            <Text style={[styles.tabLabel, (screen === 'contacts' || screen === 'detail') && styles.tabLabelActive]}>Contacts</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabButton} onPress={() => onTabPress('keypad')}>
-            <Ionicons name="keypad-outline" size={18} color={screen === 'keypad' ? colors.text : colors.secondary} />
-            <Text style={[styles.tabLabel, screen === 'keypad' && styles.tabLabelActive]}>Keypad</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+      <View style={styles.tabsWrap}>
+        <TouchableOpacity style={styles.navDotButton} onPress={goHome}>
+          <Text style={styles.navDotText}>S</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.navDotButton, styles.navDotButtonActive]} onPress={goHome}>
+          <Ionicons name="home-outline" size={16} color={colors.text} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.navDotButton}
+          onPress={() => {
+            if (screen === 'contacts') {
+              void openContactPicker();
+              return;
+            }
+            onTabPress('contacts');
+          }}
+        >
+          <Ionicons name="add" size={18} color={colors.secondary} />
+        </TouchableOpacity>
+      </View>
 
       {callOverlay ? <View style={styles.callOverlay}>{callOverlay}</View> : null}
     </SafeAreaView>
@@ -909,7 +941,7 @@ const styles = StyleSheet.create({
   homeTopRow: {
     minHeight: 36,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     marginBottom: 6,
   },
   menuButton: {
@@ -921,24 +953,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  profileButton: {
-    alignSelf: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: radius.small,
-    paddingHorizontal: 10,
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-  },
-  profileButtonText: {
-    color: colors.secondary,
-    fontSize: 12,
-    fontWeight: '600',
   },
   homeLogo: {
     color: colors.cyan,
@@ -1023,13 +1037,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexDirection: 'row',
     paddingHorizontal: 14,
     marginBottom: 10,
+    gap: 10,
   },
   languageText: {
     color: colors.text,
     fontSize: 16,
+    flex: 1,
   },
   speakNowButton: {
     marginTop: 6,
@@ -1040,6 +1058,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.blue,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
   speakNowText: {
     color: colors.text,
@@ -1076,9 +1096,9 @@ const styles = StyleSheet.create({
   },
   contactsTitle: {
     color: colors.text,
-    fontSize: 34,
+    fontSize: 40,
     fontWeight: '800',
-    marginTop: 10,
+    marginTop: 12,
   },
   contactsSubtitle: {
     color: colors.secondary,
@@ -1094,6 +1114,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    minHeight: 44,
   },
   searchInput: {
     height: 44,
@@ -1141,23 +1162,23 @@ const styles = StyleSheet.create({
   },
   importFab: {
     position: 'absolute',
-    right: 18,
-    bottom: 16,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    right: 20,
+    bottom: 88,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     borderWidth: 1,
-    borderColor: colors.cyan,
-    backgroundColor: colors.blue,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: colors.blue,
-    shadowOpacity: 0.8,
-    shadowRadius: 16,
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 0 },
   },
   contactRow: {
-    minHeight: 72,
+    minHeight: 66,
     borderRadius: radius.small,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -1204,8 +1225,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundAlt,
   },
   contactCallIconButton: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     borderRadius: radius.circle,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1230,12 +1251,13 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   detailCard: {
-    marginTop: 20,
+    marginTop: 18,
     borderRadius: radius.medium,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    paddingVertical: 22,
+    paddingVertical: 18,
+    paddingHorizontal: 14,
     alignItems: 'center',
   },
   detailAvatarWrap: {
@@ -1265,25 +1287,48 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   detailLabel: {
-    marginTop: 3,
+    marginTop: 4,
     color: colors.muted,
     fontSize: 13,
   },
+  detailInfoRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    width: '100%',
+    gap: 8,
+  },
+  detailInfoPill: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: radius.small,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.backgroundAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  detailInfoText: {
+    color: colors.secondary,
+    fontSize: 12,
+  },
   callOrbOuter: {
     alignSelf: 'center',
-    marginTop: 18,
-    width: 146,
-    height: 146,
-    borderRadius: 73,
+    marginTop: 16,
+    width: 136,
+    height: 136,
+    borderRadius: 68,
     borderWidth: 1,
     borderColor: colors.blueDeep,
     alignItems: 'center',
     justifyContent: 'center',
   },
   callOrbInner: {
-    width: 94,
-    height: 94,
-    borderRadius: 47,
+    width: 86,
+    height: 86,
+    borderRadius: 43,
     backgroundColor: colors.blue,
     borderWidth: 2,
     borderColor: colors.cyan,
@@ -1357,21 +1402,85 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.backgroundAlt,
+    minHeight: 74,
+    alignItems: 'center',
+    justifyContent: 'space-around',
   },
-  tabButton: {
-    flex: 1,
-    minHeight: 60,
+  navDotButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.circle,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
   },
-  tabLabel: {
-    color: colors.secondary,
-    fontSize: 12,
+  navDotButtonActive: {
+    borderColor: colors.cyan,
+    shadowColor: colors.blue,
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
   },
-  tabLabelActive: {
+  navDotText: {
     color: colors.text,
     fontWeight: '700',
+  },
+  contactsTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  contactsBrandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  contactsBrandS: {
+    color: colors.cyan,
+    fontWeight: '700',
+    fontSize: 28,
+    textShadowColor: colors.blue,
+    textShadowRadius: 12,
+    textShadowOffset: { width: 0, height: 0 },
+  },
+  contactsBrandText: {
+    color: colors.text,
+    fontSize: 30,
+    fontWeight: '700',
+  },
+  contactHeadIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.circle,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailActionsRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  detailActionButton: {
+    minHeight: 34,
+    borderRadius: radius.circle,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  detailActionText: {
+    color: colors.secondary,
+    fontSize: 12,
   },
   callOverlay: {
     ...StyleSheet.absoluteFill,

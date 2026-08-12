@@ -22,7 +22,8 @@ export function KeypadScreen({ code, onChangeCode, onCall }: KeypadScreenProps) 
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Speak Keypad</Text>
+      <Text style={styles.label}>Speak</Text>
+      <Text style={styles.eyebrow}>KEYPAD</Text>
       <Text style={styles.value}>{code || 'Enter code'}</Text>
       <Text style={styles.room}>{numericDigitsCount(code) >= 1 ? `Room: speak-${numericCode}` : 'Room: speak-<code>'}</Text>
 
@@ -46,20 +47,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   label: {
-    fontSize: 14,
+    fontSize: 30,
+    color: colors.text,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  eyebrow: {
     color: colors.secondary,
-    marginBottom: 8,
+    textAlign: 'center',
+    marginBottom: 10,
+    letterSpacing: 1,
   },
   value: {
     minHeight: 40,
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: '300',
     color: colors.text,
+    textAlign: 'center',
   },
   room: {
     fontSize: 13,
     color: colors.muted,
-    marginBottom: 14,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   padWrap: {
     marginTop: 10,

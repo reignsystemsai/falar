@@ -20,27 +20,44 @@ type IncomingCallScreenProps = {
 export function IncomingCallScreen({ contact, onBack, onAnswer, onDecline }: IncomingCallScreenProps) {
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={onBack}>
-        <Ionicons name="chevron-back" size={22} color={colors.secondary} />
-      </TouchableOpacity>
+      <View style={styles.topRow}>
+        <TouchableOpacity style={styles.topIconButton} onPress={onBack}>
+          <Ionicons name="ellipsis-horizontal" size={18} color={colors.secondary} />
+        </TouchableOpacity>
+      </View>
 
       <Text style={styles.brand}>S</Text>
+      <Text style={styles.speakText}>Speak</Text>
       <Text style={styles.eyebrow}>INCOMING CALL</Text>
 
-      <View style={styles.avatarWrap}>
-        <Text style={styles.avatarText}>{initials(contact.name)}</Text>
+      <View style={styles.avatarRing}>
+        <View style={styles.avatarWrap}>
+          <Text style={styles.avatarText}>{initials(contact.name)}</Text>
+        </View>
       </View>
 
       <Text style={styles.name}>{contact.name}</Text>
       <Text style={styles.number}>{contact.number}</Text>
 
       <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.declineButton} onPress={onDecline}>
+        <TouchableOpacity style={styles.actionWrap} onPress={onDecline}>
+          <View style={styles.declineButton}>
+            <Ionicons name="call" size={22} color={colors.text} />
+          </View>
           <Text style={styles.actionText}>Decline</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.answerButton} onPress={onAnswer}>
+        <TouchableOpacity style={styles.actionWrap} onPress={onAnswer}>
+          <View style={styles.answerButton}>
+            <Ionicons name="call" size={22} color={colors.text} />
+          </View>
           <Text style={styles.actionText}>Answer</Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.pagerDots}>
+        <View style={styles.pagerDot} />
+        <View style={[styles.pagerDot, styles.pagerDotActive]} />
+        <View style={styles.pagerDot} />
       </View>
     </View>
   );
@@ -61,12 +78,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingTop: 16,
   },
-  backButton: {
-    alignSelf: 'flex-start',
-    width: 36,
-    height: 36,
+  topRow: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  topIconButton: {
+    width: 34,
+    height: 34,
     borderRadius: radius.circle,
     alignItems: 'center',
     justifyContent: 'center',
@@ -76,7 +97,7 @@ const styles = StyleSheet.create({
   },
   brand: {
     color: colors.cyan,
-    fontSize: 64,
+    fontSize: 54,
     fontWeight: '300',
     textAlign: 'center',
     marginTop: 8,
@@ -84,21 +105,37 @@ const styles = StyleSheet.create({
     textShadowRadius: 16,
     textShadowOffset: { width: 0, height: 0 },
   },
-  eyebrow: {
-    marginTop: 6,
+  speakText: {
+    color: colors.text,
+    fontSize: 42,
+    fontWeight: '700',
     textAlign: 'center',
-    color: colors.secondary,
+    marginTop: -6,
+  },
+  eyebrow: {
+    marginTop: 2,
+    textAlign: 'center',
+    color: colors.blue,
     fontWeight: '700',
     letterSpacing: 1,
   },
-  avatarWrap: {
+  avatarRing: {
     alignSelf: 'center',
-    width: 108,
-    height: 108,
-    borderRadius: 54,
-    marginTop: 24,
+    width: 188,
+    height: 188,
+    borderRadius: 94,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.blueDeep,
+    marginTop: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarWrap: {
+    width: 114,
+    height: 114,
+    borderRadius: 57,
+    borderWidth: 1,
+    borderColor: colors.cyan,
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
@@ -111,33 +148,37 @@ const styles = StyleSheet.create({
   name: {
     marginTop: 16,
     color: colors.text,
-    fontSize: 24,
+    fontSize: 48,
     textAlign: 'center',
     fontWeight: '700',
   },
   number: {
     color: colors.secondary,
-    fontSize: 15,
+    fontSize: 28,
     textAlign: 'center',
     marginTop: 6,
   },
   actionRow: {
-    marginTop: 34,
+    marginTop: 26,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
+    justifyContent: 'space-around',
+    gap: 24,
+  },
+  actionWrap: {
+    alignItems: 'center',
+    gap: 10,
   },
   declineButton: {
-    flex: 1,
-    minHeight: 56,
+    width: 84,
+    height: 84,
     borderRadius: radius.circle,
     backgroundColor: colors.red,
     alignItems: 'center',
     justifyContent: 'center',
   },
   answerButton: {
-    flex: 1,
-    minHeight: 56,
+    width: 84,
+    height: 84,
     borderRadius: radius.circle,
     backgroundColor: colors.green,
     alignItems: 'center',
@@ -146,6 +187,21 @@ const styles = StyleSheet.create({
   actionText: {
     color: colors.text,
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 18,
+  },
+  pagerDots: {
+    marginTop: 18,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  pagerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.blueDeep,
+  },
+  pagerDotActive: {
+    backgroundColor: colors.cyan,
   },
 });
