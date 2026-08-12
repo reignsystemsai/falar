@@ -80,8 +80,9 @@ function ActiveRoom({ label, code, onRequestEnd, onConnected }: ActiveRoomProps)
     }
   };
 
-  const end = async () => {
-    await room.disconnect();
+  const end = () => {
+    onRequestEnd();
+    void room.disconnect();
   };
 
   const status = useMemo(() => {

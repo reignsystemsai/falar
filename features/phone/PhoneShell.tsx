@@ -1,6 +1,7 @@
 import * as Contacts from 'expo-contacts';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AudioSession } from '@livekit/react-native';
 import { supabase } from '../../lib/supabase';
 import { getLiveKitToken } from '../../lib/livekit';
 import { InCallScreen } from './screens/InCallScreen';
@@ -80,6 +81,7 @@ async function ensureSession() {
 export function PhoneShell() {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const mountedRef = useRef(true);
+  const teardownRef = useRef(false);
 
   const [state, setState] = useState<LoadState>('loading');
   const [notice, setNotice] = useState('');
@@ -112,6 +114,8 @@ export function PhoneShell() {
   };
 
   const joinRoom = async (peerUserId: string, peerLabel: string, roomName: string) => {
+    teardownRef.current = false;
+
     const startedAtIso = new Date().toISOString();
 
     setCurrentCall({
@@ -312,10 +316,7 @@ export function PhoneShell() {
         }
 
         if (data.type === 'ended') {
-          setCurrentCall(null);
-          setOutgoing(null);
-          setIncoming(null);
-          setNotice('Call ended.');
+          teardownCall('Call ended.');
         }
       })
       .subscribe();
@@ -325,6 +326,8 @@ export function PhoneShell() {
     if (!myUserId) {
       return;
     }
+
+    teardownRef.current = false;
 
     const roomName = `speak-${[myUserId, contact.userId].sort().join('-')}`;
     setNotice('Calling...');
@@ -340,28 +343,32 @@ export function PhoneShell() {
     });
   };
 
-  const onFinishCall = async (
+  const teardownCall = (message: string) => {
+    if (teardownRef.current) {
+      return;
+    }
+
+    teardownRef.current = true;
+    setCurrentCall(null);
+    setOutgoing(null);
+    setIncoming(null);
+    setNotice(message);
+    void AudioSession.stopAudioSession().catch(() => {});
+  };
+
+  const onFinishCall = (
     peerUserId: string,
     roomName: string,
     result: 'completed' | 'failed' | 'canceled'
   ) => {
-    await sendSignal({
+    teardownCall(result === 'failed' ? 'Connection failed.' : 'Call ended.');
+
+    void sendSignal({
       type: 'ended',
       fromUserId: myUserId,
       toUserId: peerUserId,
       roomName,
     });
-
-    setCurrentCall(null);
-    setOutgoing(null);
-    setIncoming(null);
-
-    if (result === 'failed') {
-      setNotice('Connection failed.');
-      return;
-    }
-
-    setNotice('Call ended.');
   };
 
   if (currentCall) {
@@ -375,7 +382,7 @@ export function PhoneShell() {
         errorMessage={currentCall.errorMessage}
         startedAtIso={currentCall.startedAtIso}
         onFinish={result => {
-          void onFinishCall(currentCall.peerUserId, currentCall.roomName, result);
+          onFinishCall(currentCall.peerUserId, currentCall.roomName, result);
         }}
       />
     );
