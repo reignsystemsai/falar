@@ -1,4 +1,4 @@
-import * as Contacts from 'expo-contacts';
+import * as Contacts from 'expo-contacts/legacy';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AudioSession } from '@livekit/react-native';
