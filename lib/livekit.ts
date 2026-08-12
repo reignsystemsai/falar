@@ -47,25 +47,45 @@ async function getFunctionsHttpErrorMessage(error: FunctionsHttpError): Promise<
   }
 }
 
+let sessionPromise: Promise<string> | null = null;
+
+async function ensureSessionAccessToken(): Promise<string> {
+  if (!sessionPromise) {
+    sessionPromise = (async () => {
+      const {
+        data: { session: existingSession },
+      } = await supabase.auth.getSession();
+
+      if (existingSession?.access_token) {
+        return existingSession.access_token;
+      }
+
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error || !data.session?.access_token || !data.user) {
+        throw new Error('Unable to start call.');
+      }
+
+      return data.session.access_token;
+    })().finally(() => {
+      sessionPromise = null;
+    });
+  }
+
+  return sessionPromise;
+}
+
 /**
  * Obtains a short-lived LiveKit participant token from the Edge Function.
  */
 export async function getLiveKitToken(roomName: string): Promise<LiveKitCredentials> {
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
-
-  if (sessionError || !session?.access_token) {
-    throw new Error('Supabase session missing. Please sign in again.');
-  }
+  const accessToken = await ensureSessionAccessToken();
 
   const { data, error } = await supabase.functions.invoke('livekit-token', {
     body: {
       roomName,
     },
     headers: {
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${accessToken}`,
     },
   });
 
