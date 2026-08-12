@@ -1,6 +1,9 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { PhoneTabKey } from './phoneTypes';
+import { SpeakPhoneTheme } from './speakPhoneTheme';
+
+const { colors } = SpeakPhoneTheme;
 
 interface PhoneTabsProps {
   activeTab: PhoneTabKey;
@@ -37,8 +40,8 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
+    borderColor: colors.border,
+    backgroundColor: colors.backgroundAlt,
   },
   tab: {
     flex: 1,
@@ -47,15 +50,15 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     borderTopWidth: 2,
-    borderTopColor: '#1a1a2e',
+    borderTopColor: colors.cyan,
   },
   label: {
-    color: '#666',
+    color: colors.secondary,
     fontSize: 13,
     fontWeight: '500',
   },
   labelActive: {
-    color: '#1a1a2e',
+    color: colors.text,
     fontWeight: '700',
   },
 });

@@ -2,6 +2,9 @@ import React from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { EmptyState } from '../components/EmptyState';
 import { RecentCall } from '../phoneTypes';
+import { SpeakPhoneTheme } from '../speakPhoneTheme';
+
+const { colors } = SpeakPhoneTheme;
 
 interface RecentsScreenProps {
   recents: RecentCall[];
@@ -18,8 +21,8 @@ export function RecentsScreen({ recents, onRedial }: RecentsScreenProps) {
   if (recents.length === 0) {
     return (
       <EmptyState
-        title="No recent calls"
-        message="Recent Speak calls will appear here after you place your first call."
+        title="No recents yet"
+        message="No recents yet"
       />
     );
   }
@@ -48,12 +51,15 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+    backgroundColor: colors.background,
   },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f7f7f8',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 12,
@@ -61,15 +67,15 @@ const styles = StyleSheet.create({
   },
   number: {
     fontSize: 16,
-    color: '#1a1a2e',
+    color: colors.text,
     fontWeight: '700',
   },
   meta: {
-    color: '#555',
+    color: colors.secondary,
     marginTop: 3,
   },
   time: {
-    color: '#666',
+    color: colors.muted,
     fontSize: 12,
   },
 });

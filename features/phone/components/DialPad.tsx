@@ -1,5 +1,8 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SpeakPhoneTheme } from '../speakPhoneTheme';
+
+const { colors } = SpeakPhoneTheme;
 
 interface DialPadProps {
   onPressKey: (value: string) => void;
@@ -31,19 +34,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 10,
+    rowGap: 12,
   },
   key: {
-    width: '31%',
+    width: '30%',
     aspectRatio: 1,
-    borderRadius: 14,
-    backgroundColor: '#f0f2f4',
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   keyText: {
     fontSize: 30,
-    color: '#1a1a2e',
+    color: colors.text,
     fontWeight: '500',
   },
   deleteButton: {
@@ -53,7 +58,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   deleteText: {
-    color: '#c53030',
+    color: colors.cyan,
     fontWeight: '700',
   },
 });

@@ -12,7 +12,9 @@ import {
 } from 'react-native';
 import { EmptyState } from './components/EmptyState';
 import { PhoneTabs } from './PhoneTabs';
+import { FavoritesScreen } from './screens/FavoritesScreen';
 import { KeypadScreen } from './screens/KeypadScreen';
+import { RecentsScreen } from './screens/RecentsScreen';
 import { PhoneTabKey } from './phoneTypes';
 import { placePhoneCall } from './phoneCall';
 import { SpeakPhoneTheme } from './speakPhoneTheme';
@@ -46,6 +48,17 @@ export function PhoneShell() {
   const [keypadCode, setKeypadCode] = useState('');
   const [query, setQuery] = useState('');
   const [contacts, setContacts] = useState<SpeakContact[]>([]);
+  const [recents] = useState<
+    Array<{
+      id: string;
+      number: string;
+      contactName?: string;
+      startedAt: string;
+      endedAt: string;
+      durationSeconds: number;
+      result: 'completed' | 'failed' | 'canceled';
+    }>
+  >([]);
   const [loadingContactPicker, setLoadingContactPicker] = useState(false);
   const [notice, setNotice] = useState('');
   const [selectedContact, setSelectedContact] = useState<SpeakContact | null>(null);
@@ -405,13 +418,28 @@ export function PhoneShell() {
     <View style={styles.panel}>
       <Text style={styles.brandCompact}>S Speak</Text>
       <Text style={styles.contactsTitle}>Favorites</Text>
-      <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-        {favoriteContacts.length ? favoriteContacts.map(renderContactRow) : <Text style={styles.emptySectionText}>No favorites yet.</Text>}
-      </ScrollView>
+      <FavoritesScreen
+        contacts={favoriteContacts.map(item => ({
+          id: `${item.id}-${item.number.rawNumber}`,
+          name: item.name,
+          number: item.number.displayNumber,
+          isFavorite: true,
+        }))}
+        onCall={number => {
+          void placeSharedPhoneCall(number);
+        }}
+      />
     </View>
   );
 
-  const recentsView = <EmptyState title="No recents yet" message="No recents yet" />;
+  const recentsView = (
+    <RecentsScreen
+      recents={recents}
+      onRedial={number => {
+        void placeSharedPhoneCall(number);
+      }}
+    />
+  );
 
   const keypadView = (
     <KeypadScreen

@@ -2,6 +2,9 @@ import React from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { EmptyState } from '../components/EmptyState';
 import { Contact } from '../phoneTypes';
+import { SpeakPhoneTheme } from '../speakPhoneTheme';
+
+const { colors } = SpeakPhoneTheme;
 
 interface FavoritesScreenProps {
   contacts: Contact[];
@@ -42,12 +45,15 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+    backgroundColor: colors.background,
   },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f7f7f8',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 12,
@@ -56,14 +62,14 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1a1a2e',
+    color: colors.text,
   },
   number: {
     marginTop: 2,
-    color: '#555',
+    color: colors.secondary,
   },
   call: {
-    color: '#2f9e44',
+    color: colors.blue,
     fontWeight: '700',
   },
 });

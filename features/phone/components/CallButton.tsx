@@ -1,5 +1,8 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { SpeakPhoneTheme } from '../speakPhoneTheme';
+
+const { colors } = SpeakPhoneTheme;
 
 interface CallButtonProps {
   disabled: boolean;
@@ -20,18 +23,18 @@ export function CallButton({ disabled, onPress }: CallButtonProps) {
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#2f9e44',
-    borderRadius: 14,
+    backgroundColor: colors.green,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 52,
+    minHeight: 56,
     marginTop: 10,
   },
   disabled: {
     opacity: 0.4,
   },
   text: {
-    color: '#fff',
+    color: colors.text,
     fontSize: 17,
     fontWeight: '800',
     letterSpacing: 1,

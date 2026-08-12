@@ -2,6 +2,9 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { CallButton } from '../components/CallButton';
 import { DialPad } from '../components/DialPad';
+import { SpeakPhoneTheme } from '../speakPhoneTheme';
+
+const { colors } = SpeakPhoneTheme;
 
 interface KeypadScreenProps {
   code: string;
@@ -40,21 +43,22 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 18,
+    backgroundColor: colors.background,
   },
   label: {
     fontSize: 14,
-    color: '#666',
+    color: colors.secondary,
     marginBottom: 8,
   },
   value: {
     minHeight: 40,
     fontSize: 34,
     fontWeight: '300',
-    color: '#1a1a2e',
+    color: colors.text,
   },
   room: {
     fontSize: 13,
-    color: '#555',
+    color: colors.muted,
     marginBottom: 14,
   },
   padWrap: {
