@@ -23,7 +23,7 @@ import { SpeakPhoneTheme } from './speakPhoneTheme';
 import { supabase } from '../../lib/supabase';
 import { useSpeakCall } from './calls/SpeakCallProvider';
 import { cleanContactLabel, normalizeSpeakNumber } from './calls/phoneFormatting';
-import { hasCompleteSpeakDiscoveryProfile } from '../auth/ensureSpeakDiscoveryProfile';
+import { ensureSpeakDiscoveryProfile, hasCompleteSpeakDiscoveryProfile } from '../auth/ensureSpeakDiscoveryProfile';
 
 type ContactPhoneShape = {
   number?: string | null;
@@ -109,6 +109,12 @@ export function PhoneShell() {
   const [profilePhone, setProfilePhone] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [didLoadProfile, setDidLoadProfile] = useState(false);
+  const [setupPhone, setSetupPhone] = useState('');
+  const [setupOtp, setSetupOtp] = useState('');
+  const [setupOtpSent, setSetupOtpSent] = useState(false);
+  const [sendingSetupOtp, setSendingSetupOtp] = useState(false);
+  const [verifyingSetupOtp, setVerifyingSetupOtp] = useState(false);
+  const [setupNotice, setSetupNotice] = useState('');
 
   const [activeDuration, setActiveDuration] = useState(0);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -598,6 +604,79 @@ export function PhoneShell() {
     });
   };
 
+  const sendPhoneSetupOtp = async () => {
+    if (sendingSetupOtp) {
+      return;
+    }
+
+    const normalized = normalizeSpeakNumber(setupPhone);
+    if (!normalized) {
+      Alert.alert('Country code required', 'Enter your phone with country code, for example +1 555 123 4567.');
+      return;
+    }
+
+    setSendingSetupOtp(true);
+    const { error } = await supabase.auth.updateUser({ phone: normalized });
+    setSendingSetupOtp(false);
+
+    if (error) {
+      Alert.alert('Verification failed', error.message);
+      return;
+    }
+
+    setSetupPhone(normalized);
+    setSetupOtpSent(true);
+    setSetupNotice('OTP sent. Enter the code to verify your phone.');
+  };
+
+  const verifyPhoneSetupOtp = async () => {
+    if (verifyingSetupOtp) {
+      return;
+    }
+
+    const normalized = normalizeSpeakNumber(setupPhone);
+    if (!normalized) {
+      Alert.alert('Country code required', 'Enter your phone with country code.');
+      return;
+    }
+
+    const code = setupOtp.trim();
+    if (!code) {
+      Alert.alert('Code required', 'Enter the OTP code from your SMS.');
+      return;
+    }
+
+    setVerifyingSetupOtp(true);
+    const { error } = await supabase.auth.verifyOtp({
+      phone: normalized,
+      token: code,
+      type: 'phone_change',
+    });
+    setVerifyingSetupOtp(false);
+
+    if (error) {
+      Alert.alert('Verification failed', error.message);
+      return;
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    await ensureSpeakDiscoveryProfile(session);
+
+    const hasDiscoveryProfile = await hasCompleteSpeakDiscoveryProfile(session);
+    if (!hasDiscoveryProfile) {
+      Alert.alert('Profile incomplete', 'Phone verification succeeded but discovery profile is still incomplete.');
+      return;
+    }
+
+    setSetupOtp('');
+    setSetupOtpSent(false);
+    setSetupNotice('Phone setup complete. You can place Speak calls now.');
+    goBack();
+  };
+
   const handleOutgoingBack = async () => {
     await endCall();
     if (selectedContact) {
@@ -906,6 +985,46 @@ export function PhoneShell() {
         <Text style={styles.contactsSubtitle}>
           Verify your phone number before placing Speak-to-Speak calls.
         </Text>
+
+        <Text style={styles.profileLabel}>Phone Number</Text>
+        <TextInput
+          value={setupPhone}
+          onChangeText={setSetupPhone}
+          placeholder="+1 555 123 4567"
+          placeholderTextColor={colors.secondary}
+          style={styles.profileInput}
+          keyboardType="phone-pad"
+        />
+
+        <TouchableOpacity style={styles.profileSaveButton} onPress={() => void sendPhoneSetupOtp()} disabled={sendingSetupOtp}>
+          <Text style={styles.profileSaveText}>{sendingSetupOtp ? 'Sending OTP...' : 'Send OTP'}</Text>
+        </TouchableOpacity>
+
+        {setupOtpSent ? (
+          <>
+            <Text style={styles.profileLabel}>Verification Code</Text>
+            <TextInput
+              value={setupOtp}
+              onChangeText={setSetupOtp}
+              placeholder="123456"
+              placeholderTextColor={colors.secondary}
+              style={styles.profileInput}
+              keyboardType="number-pad"
+            />
+
+            <TouchableOpacity
+              style={styles.profileSaveButton}
+              onPress={() => {
+                void verifyPhoneSetupOtp();
+              }}
+              disabled={verifyingSetupOtp}
+            >
+              <Text style={styles.profileSaveText}>{verifyingSetupOtp ? 'Verifying...' : 'Verify Phone'}</Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
+
+        {setupNotice ? <Text style={styles.notice}>{setupNotice}</Text> : null}
       </View>
     </View>
   );
