@@ -1,4 +1,5 @@
 import { Contact } from 'expo-contacts';
+import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
@@ -299,7 +300,7 @@ export function PhoneShell() {
         style={styles.contactCallIconButton}
         onPress={() => void placeSharedPhoneCall(contact.number.rawNumber, contact.name)}
       >
-        <Text style={styles.contactCallIcon}>☎</Text>
+        <Ionicons name="call" size={18} color={colors.blue} />
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -312,7 +313,13 @@ export function PhoneShell() {
 
       <View style={styles.readyRing}>
         <View style={styles.readyRingInner}>
-          <Text style={styles.wave}>▂▅▇▅▂</Text>
+          <View style={styles.waveBars}>
+            <View style={[styles.waveBar, styles.waveBarShort]} />
+            <View style={[styles.waveBar, styles.waveBarMedium]} />
+            <View style={[styles.waveBar, styles.waveBarTall]} />
+            <View style={[styles.waveBar, styles.waveBarMedium]} />
+            <View style={[styles.waveBar, styles.waveBarShort]} />
+          </View>
           <Text style={styles.readyText}>Ready</Text>
         </View>
       </View>
@@ -406,7 +413,7 @@ export function PhoneShell() {
         onPress={() => void placeSharedPhoneCall(selectedContact.number.rawNumber, selectedContact.name)}
       >
         <View style={styles.callOrbInner}>
-          <Text style={styles.callOrbIcon}>☎</Text>
+          <Ionicons name="call" size={34} color={colors.text} />
         </View>
       </TouchableOpacity>
     </View>
@@ -557,9 +564,25 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 0 },
   },
-  wave: {
-    color: colors.cyan,
-    fontSize: 34,
+  waveBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+    height: 36,
+  },
+  waveBar: {
+    width: 4,
+    borderRadius: 3,
+    backgroundColor: colors.cyan,
+  },
+  waveBarShort: {
+    height: 12,
+  },
+  waveBarMedium: {
+    height: 22,
+  },
+  waveBarTall: {
+    height: 32,
   },
   readyText: {
     color: colors.text,
@@ -743,10 +766,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.backgroundAlt,
-  },
-  contactCallIcon: {
-    color: colors.blue,
-    fontSize: 20,
   },
   detailEyebrow: {
     color: colors.cyan,

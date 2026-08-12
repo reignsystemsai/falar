@@ -1,8 +1,9 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SpeakPhoneTheme } from '../speakPhoneTheme';
 
-const { colors } = SpeakPhoneTheme;
+const { colors, radius } = SpeakPhoneTheme;
 
 type SpeakContact = {
   name: string;
@@ -11,22 +12,22 @@ type SpeakContact = {
 
 type OutgoingCallScreenProps = {
   contact: SpeakContact;
-  onMute: () => void;
-  onSpeaker: () => void;
-  onKeypad: () => void;
+  onBack: () => void;
   onEndCall: () => void;
 };
 
 export function OutgoingCallScreen({
   contact,
-  onMute,
-  onSpeaker,
-  onKeypad,
+  onBack,
   onEndCall,
 }: OutgoingCallScreenProps) {
   return (
     <View style={styles.container}>
-      <Text style={styles.brand}>S Speak</Text>
+      <TouchableOpacity style={styles.backButton} onPress={onBack}>
+        <Ionicons name="chevron-back" size={22} color={colors.secondary} />
+      </TouchableOpacity>
+
+      <Text style={styles.brand}>S</Text>
       <Text style={styles.title}>Outgoing Call</Text>
 
       <View style={styles.avatarWrap}>
@@ -35,21 +36,11 @@ export function OutgoingCallScreen({
 
       <Text style={styles.name}>{contact.name}</Text>
       <Text style={styles.number}>{contact.number}</Text>
-
-      <View style={styles.controlRow}>
-        <TouchableOpacity style={styles.controlButton} onPress={onMute}>
-          <Text style={styles.controlText}>Mute</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.controlButton} onPress={onSpeaker}>
-          <Text style={styles.controlText}>Speaker</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.controlButton} onPress={onKeypad}>
-          <Text style={styles.controlText}>Keypad</Text>
-        </TouchableOpacity>
-      </View>
+      <Text style={styles.stateText}>Calling...</Text>
 
       <TouchableOpacity style={styles.endButton} onPress={onEndCall}>
-        <Text style={styles.endButtonText}>End Call</Text>
+        <Ionicons name="close" size={20} color={colors.text} />
+        <Text style={styles.endButtonText}>Cancel</Text>
       </TouchableOpacity>
     </View>
   );
@@ -72,24 +63,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    width: 36,
+    height: 36,
+    borderRadius: radius.circle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   brand: {
     color: colors.cyan,
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 64,
+    fontWeight: '300',
     textAlign: 'center',
+    marginTop: 8,
+    textShadowColor: colors.blue,
+    textShadowRadius: 16,
+    textShadowOffset: { width: 0, height: 0 },
   },
   title: {
     color: colors.text,
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '800',
-    marginTop: 16,
+    marginTop: 8,
     textAlign: 'center',
   },
   avatarWrap: {
     alignSelf: 'center',
-    width: 108,
-    height: 108,
-    borderRadius: 54,
+    width: 118,
+    height: 118,
+    borderRadius: 59,
     marginTop: 24,
     borderWidth: 1,
     borderColor: colors.border,
@@ -115,31 +121,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 6,
   },
-  controlRow: {
-    marginTop: 30,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  controlButton: {
-    flex: 1,
-    minHeight: 58,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlText: {
-    color: colors.text,
-    fontWeight: '700',
+  stateText: {
+    color: colors.secondary,
+    textAlign: 'center',
+    marginTop: 8,
+    fontSize: 16,
   },
   endButton: {
-    marginTop: 18,
+    marginTop: 30,
+    alignSelf: 'center',
+    minWidth: 170,
     minHeight: 56,
-    borderRadius: 28,
+    borderRadius: radius.circle,
     backgroundColor: colors.red,
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },

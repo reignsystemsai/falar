@@ -1,8 +1,9 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SpeakPhoneTheme } from '../speakPhoneTheme';
 
-const { colors } = SpeakPhoneTheme;
+const { colors, radius } = SpeakPhoneTheme;
 
 type SpeakContact = {
   name: string;
@@ -11,14 +12,19 @@ type SpeakContact = {
 
 type IncomingCallScreenProps = {
   contact: SpeakContact;
+  onBack: () => void;
   onAnswer: () => void;
   onDecline: () => void;
 };
 
-export function IncomingCallScreen({ contact, onAnswer, onDecline }: IncomingCallScreenProps) {
+export function IncomingCallScreen({ contact, onBack, onAnswer, onDecline }: IncomingCallScreenProps) {
   return (
     <View style={styles.container}>
-      <Text style={styles.brand}>S Speak</Text>
+      <TouchableOpacity style={styles.backButton} onPress={onBack}>
+        <Ionicons name="chevron-back" size={22} color={colors.secondary} />
+      </TouchableOpacity>
+
+      <Text style={styles.brand}>S</Text>
       <Text style={styles.eyebrow}>INCOMING CALL</Text>
 
       <View style={styles.avatarWrap}>
@@ -57,14 +63,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    width: 36,
+    height: 36,
+    borderRadius: radius.circle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   brand: {
     color: colors.cyan,
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 64,
+    fontWeight: '300',
     textAlign: 'center',
+    marginTop: 8,
+    textShadowColor: colors.blue,
+    textShadowRadius: 16,
+    textShadowOffset: { width: 0, height: 0 },
   },
   eyebrow: {
-    marginTop: 18,
+    marginTop: 6,
     textAlign: 'center',
     color: colors.secondary,
     fontWeight: '700',
@@ -109,7 +130,7 @@ const styles = StyleSheet.create({
   declineButton: {
     flex: 1,
     minHeight: 56,
-    borderRadius: 28,
+    borderRadius: radius.circle,
     backgroundColor: colors.red,
     alignItems: 'center',
     justifyContent: 'center',
@@ -117,7 +138,7 @@ const styles = StyleSheet.create({
   answerButton: {
     flex: 1,
     minHeight: 56,
-    borderRadius: 28,
+    borderRadius: radius.circle,
     backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
