@@ -1,15 +1,15 @@
 import { Contact } from 'expo-contacts';
 import React, { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { CallButton } from './components/CallButton';
 import { EmptyState } from './components/EmptyState';
 import { PhoneTabs } from './PhoneTabs';
 import { KeypadScreen } from './screens/KeypadScreen';
@@ -17,31 +17,33 @@ import { PhoneTabKey } from './phoneTypes';
 import { placePhoneCall } from './phoneCall';
 import { supabase } from '../../lib/supabase';
 
+type ContactPhoneShape = {
+  number?: string | null;
+  label?: string | null;
+};
+
 type ContactNumberOption = {
   rawNumber: string;
   displayNumber: string;
   label?: string;
 };
 
-type ContactPhoneShape = {
-  number?: string | null;
-  label?: string | null;
-};
-
-type SelectedContact = {
+type SpeakContact = {
+  id: string;
   name: string;
   number: ContactNumberOption;
+  favorite: boolean;
 };
 
 export function PhoneShell() {
   const [activeTab, setActiveTab] = useState<PhoneTabKey>('contacts');
   const [keypadCode, setKeypadCode] = useState('');
+  const [query, setQuery] = useState('');
+  const [contacts, setContacts] = useState<SpeakContact[]>([]);
   const [loadingContactPicker, setLoadingContactPicker] = useState(false);
   const [notice, setNotice] = useState('');
-  const [selectedContact, setSelectedContact] = useState<SelectedContact | null>(null);
-  const [pendingNumbers, setPendingNumbers] = useState<{ name: string; options: ContactNumberOption[] } | null>(null);
 
-  const canCallSelectedContact = useMemo(() => !!selectedContact?.number.rawNumber, [selectedContact]);
+  const activeTabName = activeTab as string;
 
   const getUserId = async (): Promise<string | null> => {
     const {
@@ -79,7 +81,7 @@ export function PhoneShell() {
       }
     } catch (error) {
       console.warn('Unable to persist selected contact.', error);
-      setNotice('Contact save failed. Calling is still available.');
+      setNotice('Could not save contact. Calling is still available.');
     }
   };
 
@@ -106,13 +108,15 @@ export function PhoneShell() {
 
   const callNumber = async (rawNumber: string, contactName?: string) => {
     setNotice('');
-
     void logCallRequest(rawNumber, contactName);
 
     try {
       await placePhoneCall(rawNumber);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Unable to place call.');
+      Alert.alert(
+        'Unable to call',
+        error instanceof Error ? error.message : 'The phone call could not be started.'
+      );
     }
   };
 
@@ -145,38 +149,42 @@ export function PhoneShell() {
       dedup.add(normalized);
       options.push({
         rawNumber: normalized,
-        displayNumber: normalized,
-        label: item.label || undefined,
+        displayNumber: raw || normalized,
+        label: item.label || 'Phone',
       });
     }
 
     return options;
   };
 
+  const applyChosenNumber = (contactId: string, name: string, option: ContactNumberOption) => {
+    setContacts(current => {
+      const withoutSameNumber = current.filter(
+        item => !(item.id === contactId && item.number.rawNumber === option.rawNumber)
+      );
+      const existingFavorite = current.find(item => item.id === contactId)?.favorite ?? false;
+
+      return [{ id: contactId, name, number: option, favorite: existingFavorite }, ...withoutSameNumber];
+    });
+
+    void saveSelectedContact(name, [option.rawNumber]);
+  };
+
   const openContactPicker = async () => {
     setNotice('');
-    setPendingNumbers(null);
-    setSelectedContact(null);
-
     setLoadingContactPicker(true);
 
     try {
-      const permission = await Contacts.requestPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setNotice('Contacts permission denied.');
-        return;
-      }
-
       const picked = await Contact.presentPicker();
 
       if (!picked) {
         return;
       }
 
-      const [fullName, phones] = await Promise.all([picked.getFullName(), picked.getPhones()]);
+      const [displayName, phones] = await Promise.all([picked.getFullName(), picked.getPhones()]);
 
       const options = extractNumbers((phones as ContactPhoneShape[]) ?? []);
-      const contactName = (fullName || '').trim() || 'Unknown contact';
+      const contactName = (displayName || '').trim() || 'Unknown Contact';
 
       if (options.length === 0) {
         Alert.alert('No phone number', 'This contact has no phone number.');
@@ -184,69 +192,140 @@ export function PhoneShell() {
       }
 
       if (options.length === 1) {
-        setSelectedContact({ name: contactName, number: options[0] });
-        void saveSelectedContact(contactName, [options[0].rawNumber]);
+        applyChosenNumber(picked.id, contactName, options[0]);
         return;
       }
 
-      setPendingNumbers({ name: contactName, options });
+      Alert.alert(
+        contactName,
+        'Which number do you want to use?',
+        [
+          ...options.map(option => ({
+            text: `${option.label || 'Phone'} ${option.displayNumber}`,
+            onPress: () => applyChosenNumber(picked.id, contactName, option),
+          })),
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Unable to open contacts.');
+      console.warn('Contact picker failed.', error);
+      Alert.alert('Contacts unavailable', 'Speak could not open your contacts.');
     } finally {
       setLoadingContactPicker(false);
     }
   };
 
-  const contactsView = (
-    <View style={styles.panel}>
-      <TouchableOpacity style={styles.pickButton} onPress={() => void openContactPicker()} disabled={loadingContactPicker}>
-        <Text style={styles.pickButtonText}>{loadingContactPicker ? 'Opening Contacts...' : 'Choose From iPhone Contacts'}</Text>
+  const filteredContacts = useMemo(() => {
+    const value = query.trim().toLowerCase();
+    if (!value) {
+      return contacts;
+    }
+
+    return contacts.filter(
+      contact =>
+        contact.name.toLowerCase().includes(value) ||
+        contact.number.displayNumber.toLowerCase().includes(value)
+    );
+  }, [contacts, query]);
+
+  const favoriteContacts = filteredContacts.filter(item => item.favorite);
+  const allContacts = filteredContacts;
+
+  const toggleFavorite = (contact: SpeakContact) => {
+    setContacts(current =>
+      current.map(item => {
+        if (item.id === contact.id && item.number.rawNumber === contact.number.rawNumber) {
+          return { ...item, favorite: !item.favorite };
+        }
+
+        return item;
+      })
+    );
+  };
+
+  const renderContactRow = (contact: SpeakContact) => (
+    <View key={`${contact.id}-${contact.number.rawNumber}`} style={styles.contactRow}>
+      <View style={styles.avatarWrap}>
+        <Text style={styles.avatarText}>{initials(contact.name)}</Text>
+      </View>
+
+      <View style={styles.contactTextWrap}>
+        <Text style={styles.contactName}>{contact.name}</Text>
+        <Text style={styles.contactMeta}>
+          {contact.number.label || 'Phone'} {'\u2022'} {contact.number.displayNumber}
+        </Text>
+      </View>
+
+      <TouchableOpacity style={styles.favoriteButton} onPress={() => toggleFavorite(contact)}>
+        <Text style={styles.favoriteButtonText}>{contact.favorite ? '\u2605' : '\u2606'}</Text>
       </TouchableOpacity>
 
-      {loadingContactPicker ? <ActivityIndicator color="#1a1a2e" style={styles.loader} /> : null}
-
-      {pendingNumbers ? (
-        <View style={styles.selectionWrap}>
-          <Text style={styles.selectionTitle}>Choose a number for {pendingNumbers.name}</Text>
-          {pendingNumbers.options.map(option => (
-            <TouchableOpacity
-              key={`${pendingNumbers.name}-${option.rawNumber}`}
-              style={styles.numberRow}
-              onPress={() => {
-                setSelectedContact({ name: pendingNumbers.name, number: option });
-                void saveSelectedContact(pendingNumbers.name, [option.rawNumber]);
-                setPendingNumbers(null);
-              }}
-            >
-              <Text style={styles.numberLabel}>{option.label || 'Phone'}</Text>
-              <Text style={styles.numberValue}>{option.displayNumber}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : null}
-
-      {selectedContact ? (
-        <View style={styles.selectedWrap}>
-          <Text style={styles.selectedName}>{selectedContact.name}</Text>
-          <Text style={styles.selectedNumber}>
-            {selectedContact.number.label ? `${selectedContact.number.label}: ` : ''}
-            {selectedContact.number.displayNumber}
-          </Text>
-        </View>
-      ) : null}
-
-      <CallButton
-        disabled={!canCallSelectedContact}
-        onPress={() => {
-          if (!selectedContact) {
-            return;
-          }
-          void callNumber(selectedContact.number.rawNumber, selectedContact.name);
-        }}
-      />
-
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      <TouchableOpacity style={styles.callButton} onPress={() => void callNumber(contact.number.rawNumber, contact.name)}>
+        <Text style={styles.callButtonText}>Call</Text>
+      </TouchableOpacity>
     </View>
+  );
+
+  const contactsView = (
+    <View style={styles.panel}>
+      <View style={styles.headerWrap}>
+        <View>
+          <Text style={styles.wordmark}>Speak</Text>
+          <Text style={styles.subtitle}>Choose a contact to call</Text>
+        </View>
+        <View style={styles.profileStub}>
+          <Text style={styles.profileStubText}>A</Text>
+        </View>
+      </View>
+
+      <View style={styles.searchWrap}>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search contacts"
+          placeholderTextColor="#8792a2"
+          style={styles.searchInput}
+        />
+      </View>
+
+      <TouchableOpacity style={styles.pickButton} onPress={() => void openContactPicker()} disabled={loadingContactPicker}>
+        <Text style={styles.pickButtonText}>
+          {loadingContactPicker ? 'Opening Contacts...' : 'Add from iPhone Contacts'}
+        </Text>
+      </TouchableOpacity>
+
+      <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+        <Text style={styles.sectionTitle}>★ Favorites</Text>
+        {favoriteContacts.length ? (
+          favoriteContacts.map(renderContactRow)
+        ) : (
+          <Text style={styles.emptySectionText}>No favorites yet.</Text>
+        )}
+
+        <Text style={styles.sectionTitle}>All Contacts</Text>
+        {allContacts.length ? (
+          allContacts.map(renderContactRow)
+        ) : (
+          <Text style={styles.emptySectionText}>No Speak contacts yet.</Text>
+        )}
+
+        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      </ScrollView>
+    </View>
+  );
+
+  const favoritesOnlyView = (
+    <View style={styles.panel}>
+      <Text style={styles.wordmark}>Speak</Text>
+      <Text style={styles.subtitle}>Favorite contacts</Text>
+      <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+        {favoriteContacts.length ? favoriteContacts.map(renderContactRow) : <Text style={styles.emptySectionText}>No favorites yet.</Text>}
+      </ScrollView>
+    </View>
+  );
+
+  const recentsView = (
+    <EmptyState title="No recents yet" message="Place a call from Contacts or Keypad to see recents later." />
   );
 
   const keypadView = (
@@ -259,59 +338,91 @@ export function PhoneShell() {
     />
   );
 
-  const emptyView = (
-    <EmptyState
-      title="Not part of Build #9"
-      message="Use Contacts or Keypad to place a real phone call."
-    />
-  );
-
   const content =
-    activeTab === 'contacts'
-      ? contactsView
-      : activeTab === 'keypad'
-        ? keypadView
-        : emptyView;
+    activeTabName === 'favorites'
+      ? favoritesOnlyView
+      : activeTabName === 'recents'
+        ? recentsView
+        : activeTabName === 'keypad'
+          ? keypadView
+          : contactsView;
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Text style={styles.wordmark}>Speak</Text>
-      </View>
-
       <View style={styles.content}>{content}</View>
       <PhoneTabs activeTab={activeTab} onChange={setActiveTab} />
     </SafeAreaView>
   );
 }
 
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part.charAt(0))
+    .join('')
+    .toUpperCase();
+}
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#f7f7f8',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 10,
-  },
-  wordmark: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#1a1a2e',
+    backgroundColor: '#f7f8fa',
   },
   content: {
     flex: 1,
   },
   panel: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+  },
+  headerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  wordmark: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#102347',
+  },
+  subtitle: {
+    marginTop: 2,
+    color: '#52607a',
+    fontSize: 16,
+  },
+  profileStub: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#102347',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileStubText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  searchWrap: {
+    marginTop: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d4dae3',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    height: 44,
+    color: '#102347',
+    fontSize: 15,
   },
   pickButton: {
-    minHeight: 46,
-    borderRadius: 10,
-    backgroundColor: '#1a1a2e',
+    marginTop: 12,
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: '#132033',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -320,57 +431,89 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 15,
   },
-  loader: {
+  list: {
+    flex: 1,
     marginTop: 14,
   },
-  selectionWrap: {
-    marginTop: 16,
+  listContent: {
+    paddingBottom: 24,
   },
-  selectionTitle: {
-    color: '#1a1a2e',
+  sectionTitle: {
+    color: '#102347',
     fontWeight: '700',
+    fontSize: 17,
+    marginTop: 10,
     marginBottom: 8,
   },
-  numberRow: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  emptySectionText: {
+    color: '#7a8699',
     marginBottom: 8,
   },
-  numberLabel: {
-    color: '#666',
-    fontSize: 12,
-    marginBottom: 2,
-  },
-  numberValue: {
-    color: '#1a1a2e',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  selectedWrap: {
-    marginTop: 16,
+  contactRow: {
+    minHeight: 72,
+    borderRadius: 14,
     backgroundColor: '#fff',
-    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#e0e5ec',
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    marginBottom: 8,
+    gap: 10,
   },
-  selectedName: {
-    color: '#1a1a2e',
+  avatarWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#dbe6f7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#102347',
     fontWeight: '700',
+  },
+  contactTextWrap: {
+    flex: 1,
+  },
+  contactName: {
+    color: '#102347',
     fontSize: 16,
+    fontWeight: '700',
   },
-  selectedNumber: {
-    marginTop: 4,
-    color: '#555',
+  contactMeta: {
+    marginTop: 3,
+    color: '#6d7b90',
+    fontSize: 13,
+  },
+  favoriteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0f3f8',
+  },
+  favoriteButtonText: {
+    color: '#102347',
+    fontSize: 18,
+  },
+  callButton: {
+    minWidth: 62,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#18a957',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  callButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
   },
   notice: {
-    marginTop: 12,
-    color: '#9b2226',
-    fontWeight: '600',
+    marginTop: 10,
+    color: '#52607a',
   },
 });
