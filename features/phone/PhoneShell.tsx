@@ -106,7 +106,7 @@ export function PhoneShell() {
     }
   };
 
-  const callNumber = async (rawNumber: string, contactName?: string) => {
+  const placeSharedPhoneCall = async (rawNumber: string, contactName?: string) => {
     setNotice('');
     void logCallRequest(rawNumber, contactName);
 
@@ -260,7 +260,10 @@ export function PhoneShell() {
         <Text style={styles.favoriteButtonText}>{contact.favorite ? '\u2605' : '\u2606'}</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.callButton} onPress={() => void callNumber(contact.number.rawNumber, contact.name)}>
+      <TouchableOpacity
+        style={styles.callButton}
+        onPress={() => void placeSharedPhoneCall(contact.number.rawNumber, contact.name)}
+      >
         <Text style={styles.callButtonText}>Call</Text>
       </TouchableOpacity>
     </View>
@@ -333,7 +336,7 @@ export function PhoneShell() {
       code={keypadCode}
       onChangeCode={setKeypadCode}
       onCall={number => {
-        void callNumber(number);
+        void placeSharedPhoneCall(number);
       }}
     />
   );
