@@ -13,7 +13,7 @@
       "bitcode": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSContactsUsageDescription": "Speak uses your contacts to find people you can call."
+        "NSContactsUsageDescription": "Speak uses your contacts so you can choose people to call."
       }
     },
     "android": {

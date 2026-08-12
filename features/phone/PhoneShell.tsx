@@ -1,7 +1,8 @@
-import * as Contacts from 'expo-contacts';
+import { Contact } from 'expo-contacts';
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -22,12 +23,9 @@ type ContactNumberOption = {
   label?: string;
 };
 
-type PickedContactShape = {
-  name?: string;
-  phoneNumbers?: Array<{
-    number?: string | null;
-    label?: string | null;
-  }>;
+type ContactPhoneShape = {
+  number?: string | null;
+  label?: string | null;
 };
 
 type SelectedContact = {
@@ -132,8 +130,7 @@ export function PhoneShell() {
     return digits;
   };
 
-  const extractNumbers = (contact: PickedContactShape): ContactNumberOption[] => {
-    const numbers = contact.phoneNumbers ?? [];
+  const extractNumbers = (numbers: ContactPhoneShape[]): ContactNumberOption[] => {
     const dedup = new Set<string>();
     const options: ContactNumberOption[] = [];
 
@@ -170,17 +167,19 @@ export function PhoneShell() {
         return;
       }
 
-      const picked = await Contacts.presentContactPickerAsync();
+      const picked = await Contact.presentPicker();
 
       if (!picked) {
         return;
       }
 
-      const options = extractNumbers(picked as PickedContactShape);
-      const contactName = picked.name?.trim() || 'Unknown contact';
+      const [fullName, phones] = await Promise.all([picked.getFullName(), picked.getPhones()]);
+
+      const options = extractNumbers((phones as ContactPhoneShape[]) ?? []);
+      const contactName = (fullName || '').trim() || 'Unknown contact';
 
       if (options.length === 0) {
-        setNotice('Selected contact has no phone numbers.');
+        Alert.alert('No phone number', 'This contact has no phone number.');
         return;
       }
 
