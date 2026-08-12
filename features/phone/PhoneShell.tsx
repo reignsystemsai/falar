@@ -1762,7 +1762,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   registrationOverlayWrap: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(7, 10, 18, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',
