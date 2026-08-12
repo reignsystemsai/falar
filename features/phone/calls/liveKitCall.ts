@@ -31,6 +31,11 @@ export async function connectSpeakRoom(
     new Room({
       adaptiveStream: true,
       dynacast: true,
+      audioCaptureDefaults: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
     });
 
   // Default to the earpiece so two nearby phones don't blast each other's
@@ -47,7 +52,11 @@ export async function connectSpeakRoom(
   );
 
   await room.localParticipant
-    .setMicrophoneEnabled(true);
+    .setMicrophoneEnabled(true, {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    });
 
   return room;
 }
