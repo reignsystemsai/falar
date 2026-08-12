@@ -1,4 +1,3 @@
-import { AudioSession } from '@livekit/react-native';
 import { isKrispNoiseFilterSupported, KrispNoiseFilter } from '@livekit/react-native-krisp-noise-filter';
 import { LocalAudioTrack, Room } from 'livekit-client';
 import { supabase } from '../../../lib/supabase';
@@ -33,8 +32,6 @@ export async function connectSpeakRoom(
       adaptiveStream: true,
       dynacast: true,
     });
-
-  await AudioSession.startAudioSession();
 
   await room.connect(
     data.server_url,
