@@ -34,6 +34,7 @@ type CurrentCall = {
   callerId: string;
   calleeId: string;
   roomName: string;
+  status: 'ringing' | 'accepted' | 'declined' | 'ended' | 'failed';
   contactName: string;
   contactNumber: string;
   initiatedByMe: boolean;
@@ -150,6 +151,17 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
           async payload => {
             const row = payload.new as AppCallRow;
 
+            setCurrentCall(previous => {
+              if (!previous || previous.id !== callId) {
+                return previous;
+              }
+
+              return {
+                ...previous,
+                status: row.status,
+              };
+            });
+
             const activeCall = currentCallRef.current;
 
             if (
@@ -235,6 +247,7 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
         callerId: call.caller_id,
         calleeId: call.callee_id,
         roomName: call.room_name,
+        status: call.status,
         contactName: target.name,
         contactNumber: normalized,
         initiatedByMe: true,
@@ -381,6 +394,7 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
                 callerId: call.caller_id,
                 calleeId: call.callee_id,
                 roomName: call.room_name,
+                status: call.status,
                 contactName: caller.name,
                 contactNumber: caller.number,
                 initiatedByMe: false,
