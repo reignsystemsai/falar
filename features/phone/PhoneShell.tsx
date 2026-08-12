@@ -744,6 +744,19 @@ export function PhoneShell() {
       <Text style={styles.contactsTitle}>Contacts</Text>
       <Text style={styles.contactsSubtitle}>Find someone and start a call.</Text>
 
+      <TouchableOpacity
+        style={styles.contactsImportButton}
+        onPress={() => {
+          void openContactPicker();
+        }}
+        disabled={loadingContactPicker}
+      >
+        <Ionicons name={loadingContactPicker ? 'hourglass-outline' : 'person-add-outline'} size={16} color={colors.text} />
+        <Text style={styles.contactsImportButtonText}>
+          {loadingContactPicker ? 'Loading Contacts...' : 'Import iPhone Contacts'}
+        </Text>
+      </TouchableOpacity>
+
       <View style={styles.searchWrap}>
         <Ionicons name="search" size={16} color={colors.secondary} />
         <TextInput
@@ -1228,7 +1241,23 @@ const styles = StyleSheet.create({
   contactsSubtitle: {
     color: colors.secondary,
     marginTop: 2,
+  },
+  contactsImportButton: {
+    marginTop: 14,
     marginBottom: 14,
+    minHeight: 46,
+    borderRadius: radius.small,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.blueDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  contactsImportButtonText: {
+    color: colors.text,
+    fontWeight: '700',
   },
   searchWrap: {
     borderRadius: radius.small,
