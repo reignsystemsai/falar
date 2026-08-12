@@ -1,29 +1,24 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AudioSession } from '@livekit/react-native';
 import { supabase } from '../../lib/supabase';
 import { getLiveKitToken } from '../../lib/livekit';
-import { PhoneTabs } from './PhoneTabs';
-import { addContact, addRecentCall, loadContacts, loadRecents, toggleFavorite } from './phoneStorage';
-import { Contact, PhoneTabKey, RecentCall } from './phoneTypes';
-import { ContactsScreen } from './screens/ContactsScreen';
-import { FavoritesScreen } from './screens/FavoritesScreen';
 import { InCallScreen } from './screens/InCallScreen';
 import { KeypadScreen } from './screens/KeypadScreen';
-import { RecentsScreen } from './screens/RecentsScreen';
 
 function normalizeVisibleCode(value: string): string {
   return value.replace(/[^\d*#]/g, '');
 }
 
 export function PhoneShell() {
-  const [activeTab, setActiveTab] = useState<PhoneTabKey>('keypad');
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const mountedRef = useRef(true);
+
+  const [myCode, setMyCode] = useState('------');
   const [code, setCode] = useState('');
   const [notice, setNotice] = useState('');
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [recents, setRecents] = useState<RecentCall[]>([]);
-  const [contactName, setContactName] = useState('');
-  const [contactNumber, setContactNumber] = useState('');
+  const [outgoing, setOutgoing] = useState<{ peerCode: string; roomName: string } | null>(null);
+  const [incoming, setIncoming] = useState<{ peerCode: string; roomName: string } | null>(null);
 
   const [currentCall, setCurrentCall] = useState<{
     code: string;
@@ -36,144 +31,182 @@ export function PhoneShell() {
     errorMessage?: string;
   } | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
+  const deriveSpeakCode = (value: string): string => {
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+      hash = (hash * 31 + value.charCodeAt(i)) % 1000000;
+    }
+    return String(hash).padStart(6, '0');
+  };
 
-    const bootstrap = async () => {
-      const [savedContacts, savedRecents] = await Promise.all([loadContacts(), loadRecents()]);
+  const ensureSession = async () => {
+    const {
+      data: { session: existingSession },
+    } = await supabase.auth.getSession();
 
-      if (!mounted) return;
-
-      setContacts(savedContacts);
-      setRecents(savedRecents);
-    };
-
-    bootstrap();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const contactsByNumber = useMemo(() => {
-    const map = new Map<string, Contact>();
-    contacts.forEach(contact => {
-      map.set(contact.number.replace(/\D/g, ''), contact);
-    });
-    return map;
-  }, [contacts]);
-
-  const saveContact = async () => {
-    const normalized = contactNumber.replace(/\D/g, '');
-    if (!contactName.trim() || normalized.length < 3) {
-      return;
+    if (existingSession?.access_token && existingSession.user?.id) {
+      return existingSession;
     }
 
-    const updated = await addContact(contactName, normalized);
-    setContacts(updated);
-    setContactName('');
-    setContactNumber('');
-  };
-
-  const handleToggleFavorite = async (contactId: string) => {
-    const updated = await toggleFavorite(contactId);
-    setContacts(updated);
-  };
-
-  const placeFromList = (number: string) => {
-    const numeric = number.replace(/\D/g, '');
-    setCode(numeric);
-    setActiveTab('keypad');
-  };
-
-  const startCall = async (numericCode: string) => {
-    if (numericCode.length < 3) {
-      return;
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if (error || !data.session?.access_token || !data.user) {
+      throw new Error('Unable to initialize call session.');
     }
 
-    setNotice('');
+    return data.session;
+  };
 
-    const knownContact = contactsByNumber.get(numericCode);
+  const sendSignal = async (payload: Record<string, string>) => {
+    if (!channelRef.current) {
+      return;
+    }
+    await channelRef.current.send({ type: 'broadcast', event: 'call', payload });
+  };
+
+  const beginRoomJoin = async (peerCode: string, roomName: string) => {
     const startedAtIso = new Date().toISOString();
-    const roomName = `speak-${numericCode}`;
 
     setCurrentCall({
-      code: numericCode,
+      code: peerCode,
       roomName,
-      label: knownContact?.name ?? `Code ${numericCode}`,
+      label: `Speak ${peerCode}`,
       phase: 'calling',
       startedAtIso,
     });
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session?.access_token) {
-      setCurrentCall({
-        code: numericCode,
-        roomName,
-        label: knownContact?.name ?? `Code ${numericCode}`,
-        phase: 'error',
-        startedAtIso,
-        errorMessage: 'Please sign in.',
-      });
-      await supabase.auth.signOut();
-      return;
-    }
 
     try {
       const token = await getLiveKitToken(roomName);
       await AudioSession.startAudioSession();
 
+      if (!mountedRef.current) return;
+
       setCurrentCall({
-        code: numericCode,
+        code: peerCode,
         roomName,
-        label: knownContact?.name ?? `Code ${numericCode}`,
+        label: `Speak ${peerCode}`,
         phase: 'connecting',
         startedAtIso,
         serverUrl: token.serverUrl,
         token: token.participantToken,
       });
-    } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : '';
-      const message =
-        rawMessage.includes('Supabase session missing')
-          ? 'Please sign in.'
-          : rawMessage.includes('Unable to')
-          ? 'Unable to start call.'
-          : 'Connection failed.';
-
+    } catch {
+      if (!mountedRef.current) return;
       setCurrentCall({
-        code: numericCode,
+        code: peerCode,
         roomName,
-        label: knownContact?.name ?? `Code ${numericCode}`,
+        label: `Speak ${peerCode}`,
         phase: 'error',
         startedAtIso,
-        errorMessage: message,
+        errorMessage: 'Unable to start call.',
       });
     }
   };
 
+  useEffect(() => {
+    mountedRef.current = true;
+
+    const setup = async () => {
+      const session = await ensureSession();
+      const localCode = deriveSpeakCode(session.user.id);
+
+      if (!mountedRef.current) return;
+      setMyCode(localCode);
+
+      const channel = supabase.channel('speak-phone-calls');
+      channelRef.current = channel;
+
+      channel
+        .on('broadcast', { event: 'call' }, ({ payload }) => {
+          if (!mountedRef.current || !payload || typeof payload !== 'object') {
+            return;
+          }
+
+          const to = typeof payload.to === 'string' ? payload.to : '';
+          const from = typeof payload.from === 'string' ? payload.from : '';
+          const roomName = typeof payload.roomName === 'string' ? payload.roomName : '';
+          const type = typeof payload.type === 'string' ? payload.type : '';
+
+          if (!to || !from || !roomName || to !== localCode) {
+            return;
+          }
+
+          if (type === 'invite') {
+            setIncoming({ peerCode: from, roomName });
+            setNotice('Incoming call');
+            return;
+          }
+
+          if (type === 'answer') {
+            setOutgoing(current => {
+              if (!current || current.peerCode !== from || current.roomName !== roomName) {
+                return current;
+              }
+              void beginRoomJoin(from, roomName);
+              return null;
+            });
+            return;
+          }
+
+          if (type === 'decline') {
+            setOutgoing(current => {
+              if (!current || current.peerCode !== from || current.roomName !== roomName) {
+                return current;
+              }
+              setNotice('Call declined.');
+              return null;
+            });
+            return;
+          }
+
+          if (type === 'end') {
+            setNotice('Call ended.');
+          }
+        })
+        .subscribe();
+    };
+
+    void setup();
+
+    return () => {
+      mountedRef.current = false;
+      if (channelRef.current) {
+        void supabase.removeChannel(channelRef.current);
+      }
+      channelRef.current = null;
+    };
+  }, []);
+
+  const startCall = async (targetCode: string) => {
+    if (targetCode.length !== 6 || targetCode === myCode) {
+      setNotice('Enter another 6-digit Speak number.');
+      return;
+    }
+
+    const roomName = `speak-${[myCode, targetCode].sort().join('-')}`;
+    setNotice('Calling...');
+    setOutgoing({ peerCode: targetCode, roomName });
+
+    await sendSignal({ type: 'invite', from: myCode, to: targetCode, roomName });
+  };
+
   const finishCall = async (
-    number: string,
-    startedAtIso: string,
-    durationSeconds: number,
+    _number: string,
+    _startedAtIso: string,
+    _durationSeconds: number,
     result: 'completed' | 'failed' | 'canceled'
   ) => {
-    const knownContact = contactsByNumber.get(number);
-    const updatedRecents = await addRecentCall({
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      number,
-      contactName: knownContact?.name,
-      startedAt: startedAtIso,
-      endedAt: new Date().toISOString(),
-      durationSeconds,
-      result,
-    });
+    if (currentCall) {
+      await sendSignal({
+        type: 'end',
+        from: myCode,
+        to: currentCall.code,
+        roomName: currentCall.roomName,
+      });
+    }
 
-    setRecents(updatedRecents);
     setCurrentCall(null);
+    setOutgoing(null);
+    setIncoming(null);
 
     if (result === 'failed') {
       setNotice('Connection failed.');
@@ -205,46 +238,75 @@ export function PhoneShell() {
     );
   }
 
-  const renderScreen = () => {
-    if (activeTab === 'favorites') {
-      return <FavoritesScreen contacts={contacts} onCall={startCall} />;
-    }
-
-    if (activeTab === 'recents') {
-      return <RecentsScreen recents={recents} onRedial={startCall} />;
-    }
-
-    if (activeTab === 'contacts') {
-      return (
-        <ContactsScreen
-          contacts={contacts}
-          contactName={contactName}
-          contactNumber={contactNumber}
-          onChangeContactName={setContactName}
-          onChangeContactNumber={value => setContactNumber(value.replace(/[^\d*#]/g, ''))}
-          onSaveContact={saveContact}
-          onToggleFavorite={handleToggleFavorite}
-          onCall={placeFromList}
-        />
-      );
-    }
-
+  if (incoming) {
     return (
-      <KeypadScreen
-        code={code}
-        onChangeCode={value => setCode(normalizeVisibleCode(value))}
-        onCall={startCall}
-      />
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <Text style={styles.wordmark}>Speak</Text>
+        </View>
+        <View style={styles.contentCenter}>
+          <Text style={styles.incomingTitle}>Incoming Call</Text>
+          <Text style={styles.incomingFrom}>From {incoming.peerCode}</Text>
+          <TouchableOpacity
+            style={styles.answerButton}
+            onPress={async () => {
+              const call = incoming;
+              setIncoming(null);
+              setOutgoing(null);
+              await sendSignal({ type: 'answer', from: myCode, to: call.peerCode, roomName: call.roomName });
+              await beginRoomJoin(call.peerCode, call.roomName);
+            }}
+          >
+            <Text style={styles.answerText}>Answer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.declineButton}
+            onPress={async () => {
+              const call = incoming;
+              setIncoming(null);
+              await sendSignal({ type: 'decline', from: myCode, to: call.peerCode, roomName: call.roomName });
+              setNotice('Call declined.');
+            }}
+          >
+            <Text style={styles.declineText}>Decline</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
-  };
+  }
+
+  if (outgoing) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <Text style={styles.wordmark}>Speak</Text>
+        </View>
+        <View style={styles.contentCenter}>
+          <Text style={styles.incomingTitle}>Calling {outgoing.peerCode}</Text>
+          <Text style={styles.incomingFrom}>Waiting for answer...</Text>
+          <TouchableOpacity
+            style={styles.declineButton}
+            onPress={async () => {
+              const call = outgoing;
+              setOutgoing(null);
+              await sendSignal({ type: 'decline', from: myCode, to: call.peerCode, roomName: call.roomName });
+              setNotice('Call canceled.');
+            }}
+          >
+            <Text style={styles.declineText}>End</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const cleanCode = normalizeVisibleCode(code).replace(/\D/g, '').slice(0, 6);
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Text style={styles.wordmark}>Speak</Text>
-        <TouchableOpacity onPress={() => supabase.auth.signOut()}>
-          <Text style={styles.signOut}>Sign Out</Text>
-        </TouchableOpacity>
+        <Text style={styles.localCode}>#{myCode}</Text>
       </View>
 
       {notice ? (
@@ -253,9 +315,15 @@ export function PhoneShell() {
         </View>
       ) : null}
 
-      <View style={styles.content}>{renderScreen()}</View>
-
-      <PhoneTabs activeTab={activeTab} onChange={setActiveTab} />
+      <View style={styles.content}>
+        <KeypadScreen
+          code={cleanCode}
+          onChangeCode={value => setCode(normalizeVisibleCode(value).replace(/\D/g, '').slice(0, 6))}
+          onCall={value => {
+            void startCall(value.replace(/\D/g, '').slice(0, 6));
+          }}
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -277,12 +345,19 @@ const styles = StyleSheet.create({
     color: '#1a1a2e',
     fontWeight: '800',
   },
-  signOut: {
-    color: '#666',
-    fontWeight: '600',
+  localCode: {
+    color: '#334155',
+    fontWeight: '700',
+    fontSize: 16,
   },
   content: {
     flex: 1,
+  },
+  contentCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
   noticeWrap: {
     backgroundColor: '#f3f4f6',
@@ -292,5 +367,43 @@ const styles = StyleSheet.create({
   noticeText: {
     color: '#334155',
     fontSize: 13,
+  },
+  incomingTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1a1a2e',
+    marginBottom: 8,
+  },
+  incomingFrom: {
+    fontSize: 16,
+    color: '#475569',
+    marginBottom: 18,
+  },
+  answerButton: {
+    width: 180,
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: '#0f8f4e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  answerText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  declineButton: {
+    width: 180,
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: '#b42318',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  declineText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });
