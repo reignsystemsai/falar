@@ -383,7 +383,48 @@ export function PhoneShell() {
   }, [screen]);
 
   const importIphoneContacts = async (): Promise<ContactImportRow[]> => {
-    throw new Error('Contact import unavailable.');
+    const rows: ContactImportRow[] = [];
+    const fields = [ContactField.FULL_NAME, ContactField.PHONES] as const;
+    const limit = 75;
+    let offset = 0;
+
+    for (;;) {
+      const page = await Contact.getAllDetails(fields, { limit, offset });
+      if (!page.length) {
+        break;
+      }
+
+      for (let index = 0; index < page.length; index += 1) {
+        const entry = page[index];
+        const fullName = (entry.fullName || '').trim();
+        const displayName = fullName || 'Unknown Contact';
+        const sourceContactId = String(entry.id || `${offset + index}`);
+        const phones = Array.isArray(entry.phones) ? (entry.phones as ContactPhoneShape[]) : [];
+
+        const uniqueReadable = [...new Set(phones.map(phone => (phone.number || '').trim()).filter(Boolean))];
+        const uniqueNormalized = [
+          ...new Set(phones.map(phone => normalizeContactNumber(phone.number || '')).filter(Boolean) as string[]),
+        ];
+
+        if (!uniqueReadable.length || !uniqueNormalized.length) {
+          continue;
+        }
+
+        rows.push({
+          sourceContactId,
+          displayName,
+          phoneNumbers: uniqueReadable,
+          normalizedPhoneNumbers: uniqueNormalized,
+        });
+      }
+
+      offset += page.length;
+      if (page.length < limit) {
+        break;
+      }
+    }
+
+    return rows;
   };
 
   const openContactPicker = async () => {
@@ -396,7 +437,16 @@ export function PhoneShell() {
         throw new Error('contacts permission denied');
       }
 
-      await importIphoneContacts();
+      const rows = await importIphoneContacts();
+
+      if (!rows.length) {
+        setNotice('No accessible contacts with phone numbers were found.');
+        return;
+      }
+
+      const importedContacts = mapRowsToContacts(rows);
+      setContacts(current => mergeContacts(importedContacts, current));
+      setNotice(`Imported ${importedContacts.length} contact${importedContacts.length === 1 ? '' : 's'} from iPhone.`);
     } catch (error) {
       console.warn('Bulk contact import failed.', error);
 
@@ -410,7 +460,7 @@ export function PhoneShell() {
         return;
       }
 
-      setNotice('Speak could not import your contacts right now.');
+      setNotice(error instanceof Error ? error.message : 'Contact import failed.');
     } finally {
       setLoadingContactPicker(false);
     }
