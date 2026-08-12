@@ -12,11 +12,9 @@ import {
   View,
 } from 'react-native';
 import { EmptyState } from './components/EmptyState';
-import { PhoneTabs } from './PhoneTabs';
 import { FavoritesScreen } from './screens/FavoritesScreen';
 import { KeypadScreen } from './screens/KeypadScreen';
 import { RecentsScreen } from './screens/RecentsScreen';
-import { PhoneTabKey } from './phoneTypes';
 import { placePhoneCall } from './phoneCall';
 import { SpeakPhoneTheme } from './speakPhoneTheme';
 import { supabase } from '../../lib/supabase';
@@ -39,13 +37,19 @@ type SpeakContact = {
   favorite: boolean;
 };
 
-type PhoneView = 'home' | 'tabs' | 'contactDetail';
+type PhoneScreen =
+  | 'home'
+  | 'favorites'
+  | 'recents'
+  | 'contacts'
+  | 'detail'
+  | 'keypad'
+  | 'profile';
 
-const { colors } = SpeakPhoneTheme;
+const { colors, radius } = SpeakPhoneTheme;
 
 export function PhoneShell() {
-  const [activeTab, setActiveTab] = useState<PhoneTabKey>('contacts');
-  const [view, setView] = useState<PhoneView>('home');
+  const [stack, setStack] = useState<PhoneScreen[]>(['home']);
   const [keypadCode, setKeypadCode] = useState('');
   const [query, setQuery] = useState('');
   const [contacts, setContacts] = useState<SpeakContact[]>([]);
@@ -63,6 +67,21 @@ export function PhoneShell() {
   const [loadingContactPicker, setLoadingContactPicker] = useState(false);
   const [notice, setNotice] = useState('');
   const [selectedContact, setSelectedContact] = useState<SpeakContact | null>(null);
+  const [activeCallBanner, setActiveCallBanner] = useState<string | null>(null);
+
+  const screen = stack[stack.length - 1] || 'home';
+
+  const pushScreen = (next: PhoneScreen) => {
+    setStack(current => [...current, next]);
+  };
+
+  const goBack = () => {
+    setStack(current => (current.length > 1 ? current.slice(0, -1) : ['home']));
+  };
+
+  const goHome = () => {
+    setStack(['home']);
+  };
 
   const getUserId = async (): Promise<string | null> => {
     const {
@@ -219,7 +238,7 @@ export function PhoneShell() {
 
       if (options.length === 1) {
         applyChosenNumber(picked.id, contactName, options[0]);
-        setView('contactDetail');
+        pushScreen('detail');
         return;
       }
 
@@ -231,7 +250,7 @@ export function PhoneShell() {
             text: `${option.label || 'Phone'} ${option.displayNumber}`,
             onPress: () => {
               applyChosenNumber(picked.id, contactName, option);
-              setView('contactDetail');
+              pushScreen('detail');
             },
           })),
           { text: 'Cancel', style: 'cancel' },
@@ -274,8 +293,32 @@ export function PhoneShell() {
 
   const openContactDetail = (contact: SpeakContact) => {
     setSelectedContact(contact);
-    setView('contactDetail');
+    pushScreen('detail');
   };
+
+  const onTabPress = (next: PhoneScreen) => {
+    if (next === screen) {
+      return;
+    }
+    pushScreen(next);
+  };
+
+  const renderHeader = (title: string, subtitle?: string) => (
+    <View style={styles.headerRow}>
+      <TouchableOpacity style={styles.iconButton} onPress={goBack}>
+        <Ionicons name="chevron-back" size={22} color={colors.secondary} />
+      </TouchableOpacity>
+
+      <View style={styles.headerCopy}>
+        <Text style={styles.headerTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.headerSubtitle}>{subtitle}</Text> : null}
+      </View>
+
+      <TouchableOpacity style={styles.iconButton} onPress={goHome}>
+        <Ionicons name="home" size={18} color={colors.secondary} />
+      </TouchableOpacity>
+    </View>
+  );
 
   const renderContactRow = (contact: SpeakContact) => (
     <TouchableOpacity
@@ -289,11 +332,13 @@ export function PhoneShell() {
 
       <View style={styles.contactTextWrap}>
         <Text style={styles.contactName}>{contact.name}</Text>
-        <Text style={styles.contactMeta}>{contact.number.displayNumber}</Text>
+        <Text style={styles.contactMeta}>
+          {(contact.number.label || 'Phone').replace(/^_\$!<(.+)>!\$_$/, '$1')} {'\u2022'} {contact.number.displayNumber}
+        </Text>
       </View>
 
       <TouchableOpacity style={styles.favoriteButton} onPress={() => toggleFavorite(contact)}>
-        <Text style={styles.favoriteButtonText}>{contact.favorite ? '★' : '☆'}</Text>
+        <Ionicons name={contact.favorite ? 'star' : 'star-outline'} size={16} color={colors.secondary} />
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -307,6 +352,11 @@ export function PhoneShell() {
 
   const homeView = (
     <View style={styles.homePanel}>
+      <TouchableOpacity style={styles.profileButton} onPress={() => pushScreen('profile')}>
+        <Ionicons name="person-circle-outline" size={20} color={colors.secondary} />
+        <Text style={styles.profileButtonText}>My Speak Profile</Text>
+      </TouchableOpacity>
+
       <Text style={styles.homeLogo}>S</Text>
       <Text style={styles.homeTitle}>Speak</Text>
       <Text style={styles.homeTagline}>The world speaks here.</Text>
@@ -332,13 +382,7 @@ export function PhoneShell() {
         <Text style={styles.languageText}>Spanish</Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.speakNowButton}
-        onPress={() => {
-          setActiveTab('contacts');
-          setView('tabs');
-        }}
-      >
+      <TouchableOpacity style={styles.speakNowButton} onPress={() => pushScreen('contacts')}>
         <Text style={styles.speakNowText}>Speak Now</Text>
       </TouchableOpacity>
     </View>
@@ -346,14 +390,13 @@ export function PhoneShell() {
 
   const contactsView = (
     <View style={styles.panel}>
-      <View style={styles.contactsTopRow}>
-        <Text style={styles.brandCompact}>S Speak</Text>
-      </View>
+      {renderHeader('S Speak')}
 
       <Text style={styles.contactsTitle}>Contacts</Text>
       <Text style={styles.contactsSubtitle}>Find someone and start a call.</Text>
 
       <View style={styles.searchWrap}>
+        <Ionicons name="search" size={16} color={colors.secondary} />
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -364,15 +407,16 @@ export function PhoneShell() {
       </View>
 
       <View style={styles.segment}>
-        <View style={styles.segmentActive}>
+        <TouchableOpacity style={styles.segmentActive} onPress={() => onTabPress('contacts')}>
           <Text style={styles.segmentActiveText}>Contacts</Text>
-        </View>
-        <View style={styles.segmentInactive}>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.segmentInactive} onPress={() => onTabPress('recents')}>
           <Text style={styles.segmentInactiveText}>Recents</Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity style={styles.pickButton} onPress={() => void openContactPicker()} disabled={loadingContactPicker}>
+        <Ionicons name="person-add" size={18} color={colors.text} />
         <Text style={styles.pickButtonText}>{loadingContactPicker ? 'Opening Contacts...' : 'Add from iPhone Contacts'}</Text>
       </TouchableOpacity>
 
@@ -383,17 +427,9 @@ export function PhoneShell() {
     </View>
   );
 
-  const contactDetailView = selectedContact ? (
+  const detailView = selectedContact ? (
     <View style={styles.panel}>
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => {
-          setView('tabs');
-          setActiveTab('contacts');
-        }}
-      >
-        <Text style={styles.backText}>‹ Back</Text>
-      </TouchableOpacity>
+      {renderHeader('S Speak')}
 
       <Text style={styles.detailEyebrow}>CONTACT DETAIL</Text>
       <Text style={styles.detailTitle}>Ready to Call.</Text>
@@ -405,7 +441,7 @@ export function PhoneShell() {
         </View>
         <Text style={styles.detailName}>{selectedContact.name}</Text>
         <Text style={styles.detailNumber}>{selectedContact.number.displayNumber}</Text>
-        <Text style={styles.detailLabel}>{selectedContact.number.label || 'Phone'}</Text>
+        <Text style={styles.detailLabel}>{(selectedContact.number.label || 'Phone').replace(/^_\$!<(.+)>!\$_$/, '$1')}</Text>
       </View>
 
       <TouchableOpacity
@@ -423,8 +459,7 @@ export function PhoneShell() {
 
   const favoritesView = (
     <View style={styles.panel}>
-      <Text style={styles.brandCompact}>S Speak</Text>
-      <Text style={styles.contactsTitle}>Favorites</Text>
+      {renderHeader('Favorites')}
       <FavoritesScreen
         contacts={favoriteContacts.map(item => ({
           id: `${item.id}-${item.number.rawNumber}`,
@@ -440,53 +475,85 @@ export function PhoneShell() {
   );
 
   const recentsView = (
-    <RecentsScreen
-      recents={recents}
-      onRedial={number => {
-        void placeSharedPhoneCall(number);
-      }}
-    />
+    <View style={styles.panel}>
+      {renderHeader('Recents')}
+      <RecentsScreen
+        recents={recents}
+        onRedial={number => {
+          void placeSharedPhoneCall(number);
+        }}
+      />
+    </View>
   );
 
   const keypadView = (
-    <KeypadScreen
-      code={keypadCode}
-      onChangeCode={setKeypadCode}
-      onCall={number => {
-        void placeSharedPhoneCall(number);
-      }}
-    />
+    <View style={styles.panelNoPadding}>
+      <View style={styles.headerPad}>{renderHeader('Keypad')}</View>
+      <KeypadScreen
+        code={keypadCode}
+        onChangeCode={setKeypadCode}
+        onCall={number => {
+          void placeSharedPhoneCall(number);
+        }}
+      />
+    </View>
   );
 
-  let content = contactsView;
-  if (activeTab === 'favorites') {
+  const profileView = (
+    <View style={styles.panel}>
+      {renderHeader('My Speak Profile')}
+      <EmptyState title="Profile setup" message="Profile setup will be completed in this build." />
+    </View>
+  );
+
+  const minimizedBanner = activeCallBanner ? (
+    <TouchableOpacity style={styles.banner} onPress={() => setActiveCallBanner(null)}>
+      <Text style={styles.bannerText}>Active call with {activeCallBanner} - Tap to return</Text>
+    </TouchableOpacity>
+  ) : null;
+
+  let content = homeView;
+  if (screen === 'contacts') {
+    content = contactsView;
+  } else if (screen === 'detail') {
+    content = detailView;
+  } else if (screen === 'favorites') {
     content = favoritesView;
-  } else if (activeTab === 'recents') {
+  } else if (screen === 'recents') {
     content = recentsView;
-  } else if (activeTab === 'keypad') {
+  } else if (screen === 'keypad') {
     content = keypadView;
-  }
-
-  if (view === 'home') {
-    return (
-      <SafeAreaView style={styles.safe}>
-        {homeView}
-      </SafeAreaView>
-    );
-  }
-
-  if (view === 'contactDetail') {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.content}>{contactDetailView}</View>
-      </SafeAreaView>
-    );
+  } else if (screen === 'profile') {
+    content = profileView;
   }
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.content}>{content}</View>
-      <PhoneTabs activeTab={activeTab} onChange={setActiveTab} />
+      <View style={styles.content}>
+        {minimizedBanner}
+        {content}
+      </View>
+
+      {screen !== 'home' ? (
+        <View style={styles.tabsWrap}>
+          <TouchableOpacity style={styles.tabButton} onPress={() => onTabPress('favorites')}>
+            <Ionicons name="star-outline" size={18} color={screen === 'favorites' ? colors.text : colors.secondary} />
+            <Text style={[styles.tabLabel, screen === 'favorites' && styles.tabLabelActive]}>Favorites</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.tabButton} onPress={() => onTabPress('recents')}>
+            <Ionicons name="time-outline" size={18} color={screen === 'recents' ? colors.text : colors.secondary} />
+            <Text style={[styles.tabLabel, screen === 'recents' && styles.tabLabelActive]}>Recents</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.tabButton} onPress={() => onTabPress('contacts')}>
+            <Ionicons name="people-outline" size={18} color={screen === 'contacts' || screen === 'detail' ? colors.text : colors.secondary} />
+            <Text style={[styles.tabLabel, (screen === 'contacts' || screen === 'detail') && styles.tabLabelActive]}>Contacts</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.tabButton} onPress={() => onTabPress('keypad')}>
+            <Ionicons name="keypad-outline" size={18} color={screen === 'keypad' ? colors.text : colors.secondary} />
+            <Text style={[styles.tabLabel, screen === 'keypad' && styles.tabLabelActive]}>Keypad</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -515,17 +582,46 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     backgroundColor: colors.background,
   },
+  panelNoPadding: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerPad: {
+    paddingHorizontal: 18,
+    paddingTop: 12,
+  },
   homePanel: {
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 24,
     backgroundColor: colors.background,
   },
+  profileButton: {
+    alignSelf: 'flex-end',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.small,
+    paddingHorizontal: 10,
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  profileButtonText: {
+    color: colors.secondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   homeLogo: {
     color: colors.cyan,
     fontSize: 58,
     fontWeight: '300',
     textAlign: 'center',
+    marginTop: 6,
+    textShadowColor: colors.blue,
+    textShadowRadius: 18,
+    textShadowOffset: { width: 0, height: 0 },
   },
   homeTitle: {
     color: colors.text,
@@ -596,7 +692,7 @@ const styles = StyleSheet.create({
   },
   languageRow: {
     minHeight: 54,
-    borderRadius: 12,
+    borderRadius: radius.small,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
@@ -611,7 +707,7 @@ const styles = StyleSheet.create({
   speakNowButton: {
     marginTop: 6,
     minHeight: 56,
-    borderRadius: 14,
+    borderRadius: radius.medium,
     borderWidth: 1,
     borderColor: colors.cyan,
     backgroundColor: colors.blue,
@@ -623,15 +719,33 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
   },
-  contactsTopRow: {
+  headerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  brandCompact: {
+  headerCopy: {
+    flex: 1,
+    marginHorizontal: 10,
+  },
+  headerTitle: {
     color: colors.cyan,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
+  },
+  headerSubtitle: {
+    color: colors.secondary,
+    marginTop: 2,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.circle,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   contactsTitle: {
     color: colors.text,
@@ -645,16 +759,20 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   searchWrap: {
-    borderRadius: 12,
+    borderRadius: radius.small,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   searchInput: {
     height: 44,
     color: colors.text,
     fontSize: 15,
+    flex: 1,
   },
   segment: {
     marginTop: 12,
@@ -662,7 +780,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: radius.small,
     flexDirection: 'row',
     overflow: 'hidden',
   },
@@ -689,12 +807,14 @@ const styles = StyleSheet.create({
   },
   pickButton: {
     minHeight: 48,
-    borderRadius: 12,
+    borderRadius: radius.small,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
   pickButtonText: {
     color: colors.text,
@@ -710,7 +830,7 @@ const styles = StyleSheet.create({
   },
   contactRow: {
     minHeight: 72,
-    borderRadius: 14,
+    borderRadius: radius.small,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -750,19 +870,15 @@ const styles = StyleSheet.create({
   favoriteButton: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: radius.circle,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.backgroundAlt,
   },
-  favoriteButtonText: {
-    color: colors.text,
-    fontSize: 18,
-  },
   contactCallIconButton: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: radius.circle,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.backgroundAlt,
@@ -787,7 +903,7 @@ const styles = StyleSheet.create({
   },
   detailCard: {
     marginTop: 20,
-    borderRadius: 16,
+    borderRadius: radius.medium,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
@@ -850,18 +966,6 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 0 },
   },
-  callOrbIcon: {
-    color: colors.text,
-    fontSize: 36,
-  },
-  backButton: {
-    marginTop: 4,
-    alignSelf: 'flex-start',
-  },
-  backText: {
-    color: colors.secondary,
-    fontWeight: '700',
-  },
   emptySectionText: {
     color: colors.secondary,
     marginTop: 6,
@@ -869,5 +973,42 @@ const styles = StyleSheet.create({
   notice: {
     marginTop: 10,
     color: colors.secondary,
+  },
+  banner: {
+    marginHorizontal: 14,
+    marginTop: 8,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.small,
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  bannerText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  tabsWrap: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.backgroundAlt,
+  },
+  tabButton: {
+    flex: 1,
+    minHeight: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  tabLabel: {
+    color: colors.secondary,
+    fontSize: 12,
+  },
+  tabLabelActive: {
+    color: colors.text,
+    fontWeight: '700',
   },
 });
