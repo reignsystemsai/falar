@@ -6,6 +6,10 @@ type SpeakProfileRow = {
   display_name: string | null;
 };
 
+type SpeakProfileIdentityRow = {
+  phone_e164: string | null;
+};
+
 function firstNonEmpty(values: Array<string | null | undefined>): string | null {
   for (const value of values) {
     const trimmed = value?.trim();
@@ -71,4 +75,24 @@ export async function ensureSpeakDiscoveryProfile(session: Session | null): Prom
   if (error) {
     console.warn('Unable to ensure Speak discovery profile.', error.message);
   }
+}
+
+export async function hasCompleteSpeakDiscoveryProfile(session: Session | null): Promise<boolean> {
+  const userId = session?.user?.id;
+  if (!userId) {
+    return false;
+  }
+
+  const { data, error } = await supabase
+    .from('speak_profiles')
+    .select('phone_e164')
+    .eq('user_id', userId)
+    .maybeSingle<SpeakProfileIdentityRow>();
+
+  if (error) {
+    return false;
+  }
+
+  const normalized = data?.phone_e164 ? normalizeSpeakNumber(data.phone_e164) : null;
+  return Boolean(normalized && normalized === data?.phone_e164);
 }

@@ -23,6 +23,7 @@ import { SpeakPhoneTheme } from './speakPhoneTheme';
 import { supabase } from '../../lib/supabase';
 import { useSpeakCall } from './calls/SpeakCallProvider';
 import { cleanContactLabel, normalizeSpeakNumber } from './calls/phoneFormatting';
+import { hasCompleteSpeakDiscoveryProfile } from '../auth/ensureSpeakDiscoveryProfile';
 
 type ContactPhoneShape = {
   number?: string | null;
@@ -65,7 +66,8 @@ type PhoneScreen =
   | 'contacts'
   | 'detail'
   | 'keypad'
-  | 'profile';
+  | 'profile'
+  | 'phoneSetup';
 
 const { colors, radius } = SpeakPhoneTheme;
 
@@ -565,6 +567,16 @@ export function PhoneShell() {
   };
 
   const startSpeakCallFromContact = async (contact: SpeakContact) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    const hasDiscoveryProfile = await hasCompleteSpeakDiscoveryProfile(session);
+    if (!hasDiscoveryProfile) {
+      pushScreen('phoneSetup');
+      return;
+    }
+
     const normalized = normalizeSpeakNumber(contact.number.rawNumber || contact.number.displayNumber);
     if (!normalized) {
       Alert.alert('Country code required', 'Add the country code to this contact to call them on Speak.');
@@ -885,6 +897,19 @@ export function PhoneShell() {
     </View>
   );
 
+  const phoneSetupView = (
+    <View style={styles.panel}>
+      {renderHeader('Complete phone setup')}
+
+      <View style={styles.profileCard}>
+        <Text style={styles.profileLabel}>Phone setup required</Text>
+        <Text style={styles.contactsSubtitle}>
+          Verify your phone number before placing Speak-to-Speak calls.
+        </Text>
+      </View>
+    </View>
+  );
+
   let content = homeView;
   if (screen === 'contacts') {
     content = contactsView;
@@ -898,6 +923,8 @@ export function PhoneShell() {
     content = keypadView;
   } else if (screen === 'profile') {
     content = profileView;
+  } else if (screen === 'phoneSetup') {
+    content = phoneSetupView;
   }
 
   const minimizedBanner = callMinimized && phase === 'active' && currentCall ? (
