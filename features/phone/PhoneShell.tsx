@@ -465,14 +465,20 @@ export function PhoneShell() {
 
   const homeView = (
     <View style={styles.homePanel}>
-      <TouchableOpacity style={styles.profileButton} onPress={() => pushScreen('profile')}>
-        <Ionicons name="person-circle-outline" size={20} color={colors.secondary} />
-        <Text style={styles.profileButtonText}>My Speak Profile</Text>
-      </TouchableOpacity>
+      <View style={styles.homeTopRow}>
+        <TouchableOpacity style={styles.menuButton} onPress={() => pushScreen('profile')}>
+          <Ionicons name="menu" size={20} color={colors.secondary} />
+        </TouchableOpacity>
+      </View>
 
       <Text style={styles.homeLogo}>S</Text>
       <Text style={styles.homeTitle}>Speak</Text>
       <Text style={styles.homeTagline}>The world speaks here.</Text>
+
+      <TouchableOpacity style={styles.profileButton} onPress={() => pushScreen('profile')}>
+        <Ionicons name="person-circle-outline" size={16} color={colors.secondary} />
+        <Text style={styles.profileButtonText}>My Speak Profile</Text>
+      </TouchableOpacity>
 
       <View style={styles.readyRing}>
         <View style={styles.readyRingInner}>
@@ -503,10 +509,10 @@ export function PhoneShell() {
 
   const contactsView = (
     <View style={styles.panel}>
-      {renderHeader('S Speak')}
+      {renderHeader('Speak')}
 
       <Text style={styles.contactsTitle}>Contacts</Text>
-      <Text style={styles.contactsSubtitle}>Find someone and start a call.</Text>
+      <Text style={styles.contactsSubtitle}>Imported iPhone contacts available in Speak.</Text>
 
       <View style={styles.searchWrap}>
         <Ionicons name="search" size={16} color={colors.secondary} />
@@ -528,25 +534,30 @@ export function PhoneShell() {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.pickButton} onPress={() => void openContactPicker()} disabled={loadingContactPicker}>
-        <Ionicons name="person-add" size={18} color={colors.text} />
-        <Text style={styles.pickButtonText}>{loadingContactPicker ? 'Opening Contacts...' : 'Add from iPhone Contacts'}</Text>
-      </TouchableOpacity>
-
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {filteredContacts.length ? filteredContacts.map(renderContactRow) : <Text style={styles.emptySectionText}>Add from iPhone Contacts to start calling.</Text>}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       </ScrollView>
+
+      <TouchableOpacity
+        style={styles.importFab}
+        onPress={() => {
+          void openContactPicker();
+        }}
+        disabled={loadingContactPicker}
+      >
+        <Ionicons name="add" size={28} color={colors.text} />
+      </TouchableOpacity>
     </View>
   );
 
   const detailView = selectedContact ? (
     <View style={styles.panel}>
-      {renderHeader('S Speak')}
+      {renderHeader('Speak')}
 
       <Text style={styles.detailEyebrow}>CONTACT DETAIL</Text>
-      <Text style={styles.detailTitle}>Ready to Call.</Text>
-      <Text style={styles.detailSubtitle}>Tap the button below to start a voice call immediately.</Text>
+      <Text style={styles.detailTitle}>Ready to call</Text>
+      <Text style={styles.detailSubtitle}>Tap the blue call control to start a Speak voice call.</Text>
 
       <View style={styles.detailCard}>
         <View style={styles.detailAvatarWrap}>
@@ -789,11 +800,27 @@ const styles = StyleSheet.create({
   homePanel: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingTop: 12,
     backgroundColor: colors.background,
   },
+  homeTopRow: {
+    minHeight: 36,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 6,
+  },
+  menuButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.circle,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   profileButton: {
-    alignSelf: 'flex-end',
+    alignSelf: 'center',
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
@@ -803,6 +830,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    marginTop: 8,
   },
   profileButtonText: {
     color: colors.secondary,
@@ -811,7 +839,7 @@ const styles = StyleSheet.create({
   },
   homeLogo: {
     color: colors.cyan,
-    fontSize: 58,
+    fontSize: 52,
     fontWeight: '300',
     textAlign: 'center',
     marginTop: 6,
@@ -822,7 +850,7 @@ const styles = StyleSheet.create({
   homeTitle: {
     color: colors.text,
     textAlign: 'center',
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: '800',
     marginTop: -8,
   },
@@ -833,9 +861,9 @@ const styles = StyleSheet.create({
   },
   readyRing: {
     alignSelf: 'center',
-    width: 228,
-    height: 228,
-    borderRadius: 114,
+    width: 210,
+    height: 210,
+    borderRadius: 105,
     borderWidth: 1,
     borderColor: colors.blueDeep,
     alignItems: 'center',
@@ -843,9 +871,9 @@ const styles = StyleSheet.create({
     marginVertical: 18,
   },
   readyRingInner: {
-    width: 158,
-    height: 158,
-    borderRadius: 79,
+    width: 146,
+    height: 146,
+    borderRadius: 73,
     backgroundColor: colors.surface,
     borderWidth: 2,
     borderColor: colors.cyan,
@@ -1001,28 +1029,29 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     fontWeight: '600',
   },
-  pickButton: {
-    minHeight: 48,
-    borderRadius: radius.small,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  pickButtonText: {
-    color: colors.text,
-    fontWeight: '700',
-    fontSize: 15,
-  },
   list: {
     flex: 1,
     marginTop: 12,
   },
   listContent: {
-    paddingBottom: 24,
+    paddingBottom: 96,
+  },
+  importFab: {
+    position: 'absolute',
+    right: 18,
+    bottom: 16,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 1,
+    borderColor: colors.cyan,
+    backgroundColor: colors.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.blue,
+    shadowOpacity: 0.8,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 0 },
   },
   contactRow: {
     minHeight: 72,
@@ -1087,7 +1116,7 @@ const styles = StyleSheet.create({
   },
   detailTitle: {
     color: colors.text,
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: '800',
     marginTop: 5,
   },
@@ -1139,19 +1168,19 @@ const styles = StyleSheet.create({
   },
   callOrbOuter: {
     alignSelf: 'center',
-    marginTop: 24,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
+    marginTop: 18,
+    width: 146,
+    height: 146,
+    borderRadius: 73,
     borderWidth: 1,
     borderColor: colors.blueDeep,
     alignItems: 'center',
     justifyContent: 'center',
   },
   callOrbInner: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 94,
+    height: 94,
+    borderRadius: 47,
     backgroundColor: colors.blue,
     borderWidth: 2,
     borderColor: colors.cyan,

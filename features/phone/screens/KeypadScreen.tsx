@@ -22,9 +22,9 @@ export function KeypadScreen({ code, onChangeCode, onCall }: KeypadScreenProps) 
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Speak Call Code</Text>
+      <Text style={styles.label}>Speak Keypad</Text>
       <Text style={styles.value}>{code || 'Enter code'}</Text>
-      <Text style={styles.room}>Room: {numericDigitsCount(code) >= 1 ? `speak-${numericCode}` : 'speak-<code>'}</Text>
+      <Text style={styles.room}>{numericDigitsCount(code) >= 1 ? `Room: speak-${numericCode}` : 'Room: speak-<code>'}</Text>
 
       <View style={styles.padWrap}>
         <DialPad
@@ -42,7 +42,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 18,
+    paddingTop: 12,
     backgroundColor: colors.background,
   },
   label: {
@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
   },
   value: {
     minHeight: 40,
-    fontSize: 34,
+    fontSize: 32,
     fontWeight: '300',
     color: colors.text,
   },
