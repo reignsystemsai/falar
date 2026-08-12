@@ -1,4 +1,4 @@
-import { Contact, ContactField } from 'expo-contacts';
+import { Contact, ContactField, presentAccessPickerAsync, requestPermissionsAsync } from 'expo-contacts';
 import { Camera } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -49,6 +49,13 @@ type SavedContactRow = {
   phone_numbers: string[] | null;
   normalized_phone_numbers: string[] | null;
   source_contact_id: string | null;
+};
+
+type ContactImportRow = {
+  sourceContactId: string;
+  displayName: string;
+  phoneNumbers: string[];
+  normalizedPhoneNumbers: string[];
 };
 
 type PhoneScreen =
@@ -243,33 +250,46 @@ export function PhoneShell() {
 
     if (error) {
       console.warn('Unable to load saved contacts from Supabase.', error);
-      setNotice('Could not load saved contacts.');
+      setNotice('Saved contacts are unavailable right now. Imported contacts still work.');
       return;
     }
 
-    const rows = (data as SavedContactRow[] | null) ?? [];
-    const nextContacts: SpeakContact[] = [];
+    const nextContacts = mapRowsToContacts(
+      ((data as SavedContactRow[] | null) ?? []).map(row => ({
+        sourceContactId: row.source_contact_id || row.id,
+        displayName: row.display_name || 'Unknown Contact',
+        phoneNumbers: Array.isArray(row.phone_numbers) ? row.phone_numbers : [],
+        normalizedPhoneNumbers: Array.isArray(row.normalized_phone_numbers) ? row.normalized_phone_numbers : [],
+      }))
+    );
+
+    setContacts(current => mergeContacts(nextContacts, current));
+    setNotice('');
+  };
+
+  const mapRowsToContacts = (rows: ContactImportRow[]): SpeakContact[] => {
+    const deduped = new Map<string, SpeakContact>();
 
     for (const row of rows) {
-      const displayName = row.display_name || 'Unknown Contact';
-      const readableNumbers = Array.isArray(row.phone_numbers) ? row.phone_numbers : [];
-      const normalizedNumbers = Array.isArray(row.normalized_phone_numbers)
-        ? row.normalized_phone_numbers
-        : [];
+      const total = Math.max(row.phoneNumbers.length, row.normalizedPhoneNumbers.length);
 
-      const total = Math.max(readableNumbers.length, normalizedNumbers.length);
       for (let index = 0; index < total; index += 1) {
-        const readable = readableNumbers[index] || normalizedNumbers[index] || '';
-        const normalized = normalizedNumbers[index] || normalizeContactNumber(readable);
+        const readable = row.phoneNumbers[index] || row.normalizedPhoneNumbers[index] || '';
+        const normalized = row.normalizedPhoneNumbers[index] || normalizeContactNumber(readable);
 
         if (!readable || !normalized) {
           continue;
         }
 
-        nextContacts.push({
-          id: `${row.id}-${index}`,
-          sourceContactId: row.source_contact_id || row.id,
-          name: displayName,
+        const key = `${row.sourceContactId}:${normalized}`;
+        if (deduped.has(key)) {
+          continue;
+        }
+
+        deduped.set(key, {
+          id: key,
+          sourceContactId: row.sourceContactId,
+          name: row.displayName || 'Unknown Contact',
           number: {
             rawNumber: normalized,
             displayNumber: readable,
@@ -280,7 +300,19 @@ export function PhoneShell() {
       }
     }
 
-    setContacts(nextContacts);
+    return [...deduped.values()].sort((left, right) => left.name.localeCompare(right.name));
+  };
+
+  const mergeContacts = (primary: SpeakContact[], secondary: SpeakContact[]): SpeakContact[] => {
+    const merged = new Map<string, SpeakContact>();
+
+    for (const contact of [...secondary, ...primary]) {
+      const key = `${contact.sourceContactId || contact.id}:${contact.number.rawNumber}`;
+      const current = merged.get(key);
+      merged.set(key, current ? { ...current, ...contact, favorite: current.favorite || contact.favorite } : contact);
+    }
+
+    return [...merged.values()].sort((left, right) => left.name.localeCompare(right.name));
   };
 
   const normalizeContactNumber = (value: string): string | null => {
@@ -357,14 +389,7 @@ export function PhoneShell() {
       return;
     }
 
-    const rows: Array<{
-      user_id: string;
-      source_contact_id: string;
-      display_name: string;
-      phone_numbers: string[];
-      normalized_phone_numbers: string[];
-      updated_at: string;
-    }> = [];
+    const rows: ContactImportRow[] = [];
 
     const fields = [ContactField.FULL_NAME, ContactField.PHONES] as const;
     const limit = 75;
@@ -393,12 +418,10 @@ export function PhoneShell() {
         }
 
         rows.push({
-          user_id: userId,
-          source_contact_id: sourceContactId,
-          display_name: displayName,
-          phone_numbers: uniqueReadable,
-          normalized_phone_numbers: uniqueNormalized,
-          updated_at: new Date().toISOString(),
+          sourceContactId,
+          displayName,
+          phoneNumbers: uniqueReadable,
+          normalizedPhoneNumbers: uniqueNormalized,
         });
       }
 
@@ -413,20 +436,32 @@ export function PhoneShell() {
       return;
     }
 
+    const importedContacts = mapRowsToContacts(rows);
+    setContacts(current => mergeContacts(importedContacts, current));
+    setNotice(`Imported ${importedContacts.length} contact${importedContacts.length === 1 ? '' : 's'} from iPhone.`);
+
+    const saveRows = rows.map(row => ({
+      user_id: userId,
+      source_contact_id: row.sourceContactId,
+      display_name: row.displayName,
+      phone_numbers: row.phoneNumbers,
+      normalized_phone_numbers: row.normalizedPhoneNumbers,
+      updated_at: new Date().toISOString(),
+    }));
+
     const batchSize = 75;
-    for (let start = 0; start < rows.length; start += batchSize) {
-      const slice = rows.slice(start, start + batchSize);
+    for (let start = 0; start < saveRows.length; start += batchSize) {
+      const slice = saveRows.slice(start, start + batchSize);
       const { error } = await supabase.from('saved_contacts').upsert(slice, {
         onConflict: 'user_id,source_contact_id',
       });
 
       if (error) {
-        throw error;
+        console.warn('Unable to save imported contacts to Supabase.', error);
+        setNotice('Imported contacts are available on this device. Cloud sync is unavailable right now.');
+        return;
       }
     }
-
-    await loadContactsFromSupabase();
-    setNotice(`Imported ${rows.length} contact${rows.length === 1 ? '' : 's'} from iPhone.`);
   };
 
   const openContactPicker = async () => {
@@ -434,12 +469,13 @@ export function PhoneShell() {
     setLoadingContactPicker(true);
 
     try {
-      const supportsAccessPicker =
-        typeof (Contact as unknown as { presentAccessPicker?: () => Promise<Contact[]> }).presentAccessPicker ===
-        'function';
+      const permission = await requestPermissionsAsync();
+      if (permission.status !== 'granted') {
+        throw new Error('contacts permission denied');
+      }
 
-      if (supportsAccessPicker) {
-        await (Contact as unknown as { presentAccessPicker: () => Promise<Contact[]> }).presentAccessPicker();
+      if (typeof presentAccessPickerAsync === 'function') {
+        await presentAccessPickerAsync();
       }
 
       await importIphoneContacts();
