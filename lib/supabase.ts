@@ -3,8 +3,12 @@ import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, processLock } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('BLOCKED: NEW SUPABASE URL + PUBLISHABLE KEY REQUIRED.');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
