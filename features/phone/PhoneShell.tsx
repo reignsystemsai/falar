@@ -1,4 +1,4 @@
-import { Contact, ContactField, presentAccessPickerAsync, requestPermissionsAsync } from 'expo-contacts';
+import { Contact, ContactField, requestPermissionsAsync } from 'expo-contacts';
 import { Camera } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -382,89 +382,8 @@ export function PhoneShell() {
     }
   }, [screen]);
 
-  const importIphoneContacts = async () => {
-    const userId = await getUserId();
-    if (!userId) {
-      Alert.alert('Unavailable', 'Could not identify the current Speak user.');
-      return;
-    }
-
-    const rows: ContactImportRow[] = [];
-
-    const fields = [ContactField.FULL_NAME, ContactField.PHONES] as const;
-    const limit = 75;
-    let offset = 0;
-
-    for (;;) {
-      const page = await Contact.getAllDetails(fields, { limit, offset });
-      if (!page.length) {
-        break;
-      }
-
-      for (let index = 0; index < page.length; index += 1) {
-        const entry = page[index];
-        const fullName = (entry.fullName || '').trim();
-        const displayName = fullName || 'Unknown Contact';
-        const sourceContactId = String(entry.id || `${offset + index}`);
-        const phones = Array.isArray(entry.phones) ? (entry.phones as ContactPhoneShape[]) : [];
-
-        const uniqueReadable = [...new Set(phones.map(phone => (phone.number || '').trim()).filter(Boolean))];
-        const uniqueNormalized = [
-          ...new Set(phones.map(phone => normalizeContactNumber(phone.number || '')).filter(Boolean) as string[]),
-        ];
-
-        if (!uniqueReadable.length || !uniqueNormalized.length) {
-          continue;
-        }
-
-        rows.push({
-          sourceContactId,
-          displayName,
-          phoneNumbers: uniqueReadable,
-          normalizedPhoneNumbers: uniqueNormalized,
-        });
-      }
-
-      offset += page.length;
-      if (page.length < limit) {
-        break;
-      }
-    }
-
-    if (!rows.length) {
-      setNotice('No accessible contacts with phone numbers were found.');
-      return;
-    }
-
-    const importedContacts = mapRowsToContacts(rows);
-    setContacts(current => mergeContacts(importedContacts, current));
-    setNotice(`Imported ${importedContacts.length} contact${importedContacts.length === 1 ? '' : 's'} from iPhone.`);
-
-    const saveRows = rows.map(row => ({
-      user_id: userId,
-      source_contact_id: row.sourceContactId,
-      display_name: row.displayName,
-      phone_numbers: row.phoneNumbers,
-      normalized_phone_numbers: row.normalizedPhoneNumbers,
-      updated_at: new Date().toISOString(),
-    }));
-
-    const batchSize = 75;
-    for (let start = 0; start < saveRows.length; start += batchSize) {
-      const slice = saveRows.slice(start, start + batchSize);
-      const { error } = await supabase.from('saved_contacts').upsert(slice, {
-        onConflict: 'user_id,source_contact_id',
-      });
-
-      if (error) {
-        console.warn('Unable to save imported contacts to Supabase.', error);
-        setNotice(error.message);
-        return;
-      }
-    }
-
-    await loadContactsFromSupabase();
-    setNotice(`Imported ${importedContacts.length} contact${importedContacts.length === 1 ? '' : 's'}.`);
+  const importIphoneContacts = async (): Promise<ContactImportRow[]> => {
+    throw new Error('Contact import unavailable.');
   };
 
   const openContactPicker = async () => {
@@ -475,10 +394,6 @@ export function PhoneShell() {
       const permission = await requestPermissionsAsync();
       if (permission.status !== 'granted') {
         throw new Error('contacts permission denied');
-      }
-
-      if (typeof presentAccessPickerAsync === 'function') {
-        await presentAccessPickerAsync();
       }
 
       await importIphoneContacts();
