@@ -17,4 +17,10 @@ export const SpeakPhoneTheme = {
     green: '#13D67A',
     red: '#F02B35',
   },
+  radius: {
+    small: 12,
+    medium: 16,
+    large: 22,
+    circle: 999,
+  },
 } as const;

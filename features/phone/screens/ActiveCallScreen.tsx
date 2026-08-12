@@ -1,8 +1,9 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SpeakPhoneTheme } from '../speakPhoneTheme';
 
-const { colors } = SpeakPhoneTheme;
+const { colors, radius } = SpeakPhoneTheme;
 
 type SpeakContact = {
   name: string;
@@ -13,11 +14,8 @@ type ActiveCallScreenProps = {
   contact: SpeakContact;
   durationSeconds: number;
   muted: boolean;
-  speaker: boolean;
+  onBack: () => void;
   onMute: () => void;
-  onSpeaker: () => void;
-  onKeypad: () => void;
-  onAddCall: () => void;
   onEndCall: () => void;
 };
 
@@ -25,11 +23,8 @@ export function ActiveCallScreen({
   contact,
   durationSeconds,
   muted,
-  speaker,
+  onBack,
   onMute,
-  onSpeaker,
-  onKeypad,
-  onAddCall,
   onEndCall,
 }: ActiveCallScreenProps) {
   const mins = Math.floor(durationSeconds / 60);
@@ -37,7 +32,11 @@ export function ActiveCallScreen({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.brand}>S Speak</Text>
+      <TouchableOpacity style={styles.backButton} onPress={onBack}>
+        <Ionicons name="chevron-back" size={22} color={colors.secondary} />
+      </TouchableOpacity>
+
+      <Text style={styles.brand}>S</Text>
       <Text style={styles.name}>{contact.name}</Text>
       <Text style={styles.number}>{contact.number}</Text>
       <Text style={styles.duration}>{`${mins}:${String(secs).padStart(2, '0')}`}</Text>
@@ -48,20 +47,13 @@ export function ActiveCallScreen({
 
       <View style={styles.controlsGrid}>
         <TouchableOpacity style={styles.controlButton} onPress={onMute}>
+          <Ionicons name={muted ? 'mic-off' : 'mic'} size={18} color={colors.text} />
           <Text style={styles.controlText}>{muted ? 'Unmute' : 'Mute'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.controlButton} onPress={onSpeaker}>
-          <Text style={styles.controlText}>{speaker ? 'Speaker On' : 'Speaker'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.controlButton} onPress={onKeypad}>
-          <Text style={styles.controlText}>Keypad</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.controlButton} onPress={onAddCall}>
-          <Text style={styles.controlText}>Add Call</Text>
         </TouchableOpacity>
       </View>
 
       <TouchableOpacity style={styles.endButton} onPress={onEndCall}>
+        <Ionicons name="call" size={18} color={colors.text} />
         <Text style={styles.endButtonText}>End Call</Text>
       </TouchableOpacity>
     </View>
@@ -75,11 +67,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    width: 36,
+    height: 36,
+    borderRadius: radius.circle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   brand: {
     color: colors.cyan,
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 64,
+    fontWeight: '300',
     textAlign: 'center',
+    marginTop: 8,
+    textShadowColor: colors.blue,
+    textShadowRadius: 16,
+    textShadowOffset: { width: 0, height: 0 },
   },
   name: {
     marginTop: 20,
@@ -124,17 +131,18 @@ const styles = StyleSheet.create({
   controlsGrid: {
     marginTop: 24,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 12,
+    justifyContent: 'center',
   },
   controlButton: {
-    width: '48%',
+    minWidth: 150,
     minHeight: 56,
-    borderRadius: 14,
+    borderRadius: radius.circle,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
+    gap: 8,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -145,8 +153,10 @@ const styles = StyleSheet.create({
   endButton: {
     marginTop: 16,
     minHeight: 56,
-    borderRadius: 28,
+    borderRadius: radius.circle,
     backgroundColor: colors.red,
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
