@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { ensureSpeakDiscoveryProfile } from './ensureSpeakDiscoveryProfile';
 
 interface SignInScreenProps {
   onSignedIn: () => void;
@@ -37,6 +38,11 @@ export function SignInScreen({ onSignedIn }: SignInScreenProps) {
       setErrorMessage(error.message || 'Unable to sign in.');
       return;
     }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    await ensureSpeakDiscoveryProfile(session);
 
     onSignedIn();
   };
