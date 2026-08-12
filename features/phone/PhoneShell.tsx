@@ -1242,7 +1242,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   callOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.background,
   },
   connectingOverlay: {
