@@ -250,7 +250,7 @@ export function PhoneShell() {
 
     if (error) {
       console.warn('Unable to load saved contacts from Supabase.', error);
-      setNotice('Saved contacts are unavailable right now. Imported contacts still work.');
+      setNotice(error.message);
       return;
     }
 
@@ -458,7 +458,7 @@ export function PhoneShell() {
 
       if (error) {
         console.warn('Unable to save imported contacts to Supabase.', error);
-        setNotice('Imported contacts are available on this device. Cloud sync is unavailable right now.');
+        setNotice(error.message);
         return;
       }
     }
