@@ -8,7 +8,6 @@ import React, {
   useState,
 } from 'react';
 import { Alert } from 'react-native';
-import { AudioSession } from '@livekit/react-native';
 import { Room } from 'livekit-client';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../../../lib/supabase';
@@ -94,11 +93,6 @@ async function disconnectRoom(roomRef: React.MutableRefObject<Room | null>) {
     roomRef.current = null;
   }
 
-  try {
-    await AudioSession.stopAudioSession();
-  } catch {
-    // Ignore teardown errors if audio session is not active.
-  }
 }
 
 export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
