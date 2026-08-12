@@ -1,7 +1,9 @@
 import * as Contacts from 'expo-contacts';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { getLiveKitToken } from '../../lib/livekit';
+import { InCallScreen } from './screens/InCallScreen';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -13,6 +15,26 @@ type DeviceContact = {
 
 type SpeakContact = DeviceContact & {
   userId: string;
+};
+
+type CallSignalPayload = {
+  type: 'invite' | 'accepted' | 'declined' | 'ended';
+  fromUserId: string;
+  toUserId: string;
+  roomName: string;
+  fromName?: string;
+  fromPhone?: string;
+};
+
+type ActiveCall = {
+  peerUserId: string;
+  peerLabel: string;
+  roomName: string;
+  startedAtIso: string;
+  phase: 'calling' | 'connecting' | 'active' | 'error';
+  token?: string;
+  serverUrl?: string;
+  errorMessage?: string;
 };
 
 function normalizeToE164(value: string): string | null {
@@ -56,10 +78,77 @@ async function ensureSession() {
 }
 
 export function PhoneShell() {
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const mountedRef = useRef(true);
+
   const [state, setState] = useState<LoadState>('loading');
   const [notice, setNotice] = useState('');
   const [myUserId, setMyUserId] = useState('');
+  const [myLabel, setMyLabel] = useState('');
+  const [myPhone, setMyPhone] = useState('');
   const [speakContacts, setSpeakContacts] = useState<SpeakContact[]>([]);
+  const [incoming, setIncoming] = useState<CallSignalPayload | null>(null);
+  const [outgoing, setOutgoing] = useState<{ peerUserId: string; peerLabel: string; roomName: string } | null>(null);
+  const [currentCall, setCurrentCall] = useState<ActiveCall | null>(null);
+
+  const contactsByUserId = useMemo(() => {
+    const map = new Map<string, SpeakContact>();
+    for (const contact of speakContacts) {
+      map.set(contact.userId, contact);
+    }
+    return map;
+  }, [speakContacts]);
+
+  const sendSignal = async (payload: CallSignalPayload) => {
+    if (!channelRef.current) {
+      return;
+    }
+
+    await channelRef.current.send({
+      type: 'broadcast',
+      event: 'call',
+      payload,
+    });
+  };
+
+  const joinRoom = async (peerUserId: string, peerLabel: string, roomName: string) => {
+    const startedAtIso = new Date().toISOString();
+
+    setCurrentCall({
+      peerUserId,
+      peerLabel,
+      roomName,
+      startedAtIso,
+      phase: 'calling',
+    });
+
+    try {
+      const creds = await getLiveKitToken(roomName);
+
+      if (!mountedRef.current) return;
+
+      setCurrentCall({
+        peerUserId,
+        peerLabel,
+        roomName,
+        startedAtIso,
+        phase: 'connecting',
+        token: creds.participantToken,
+        serverUrl: creds.serverUrl,
+      });
+    } catch {
+      if (!mountedRef.current) return;
+
+      setCurrentCall({
+        peerUserId,
+        peerLabel,
+        roomName,
+        startedAtIso,
+        phase: 'error',
+        errorMessage: 'Unable to start call.',
+      });
+    }
+  };
 
   const loadSpeakContacts = async () => {
     setState('loading');
@@ -67,7 +156,8 @@ export function PhoneShell() {
 
     try {
       const session = await ensureSession();
-      setMyUserId(session.user.id);
+      const localUserId = session.user.id;
+      setMyUserId(localUserId);
 
       const permission = await Contacts.requestPermissionsAsync();
       if (permission.status !== 'granted') {
@@ -120,7 +210,11 @@ export function PhoneShell() {
       const matched = (data ?? [])
         .map(item => {
           const local = normalizedByPhone.get(item.phone_e164);
-          if (!local) {
+          if (!local) return null;
+
+          if (item.user_id === localUserId) {
+            setMyLabel(local.name);
+            setMyPhone(local.phoneE164);
             return null;
           }
 
@@ -129,8 +223,7 @@ export function PhoneShell() {
             userId: item.user_id,
           } as SpeakContact;
         })
-        .filter((item): item is SpeakContact => !!item)
-        .filter(item => item.userId !== session.user.id);
+        .filter((item): item is SpeakContact => !!item);
 
       setSpeakContacts(matched);
       setState('ready');
@@ -141,8 +234,231 @@ export function PhoneShell() {
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     void loadSpeakContacts();
+
+    return () => {
+      mountedRef.current = false;
+      if (channelRef.current) {
+        void supabase.removeChannel(channelRef.current);
+      }
+      channelRef.current = null;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!myUserId) {
+      return;
+    }
+
+    if (channelRef.current) {
+      void supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    const channel = supabase.channel('speak-contact-calls');
+    channelRef.current = channel;
+
+    channel
+      .on('broadcast', { event: 'call' }, async ({ payload }) => {
+        if (!mountedRef.current || !payload || typeof payload !== 'object') {
+          return;
+        }
+
+        const data = payload as Partial<CallSignalPayload>;
+
+        if (!data.type || !data.fromUserId || !data.toUserId || !data.roomName) {
+          return;
+        }
+
+        if (data.toUserId !== myUserId) {
+          return;
+        }
+
+        if (data.type === 'invite') {
+          setIncoming({
+            type: 'invite',
+            fromUserId: data.fromUserId,
+            toUserId: data.toUserId,
+            roomName: data.roomName,
+            fromName: data.fromName,
+            fromPhone: data.fromPhone,
+          });
+          setNotice('Incoming call');
+          return;
+        }
+
+        if (data.type === 'accepted') {
+          setOutgoing(current => {
+            if (!current || current.peerUserId !== data.fromUserId || current.roomName !== data.roomName) {
+              return current;
+            }
+
+            void joinRoom(current.peerUserId, current.peerLabel, current.roomName);
+            return null;
+          });
+          return;
+        }
+
+        if (data.type === 'declined') {
+          setOutgoing(current => {
+            if (!current || current.peerUserId !== data.fromUserId || current.roomName !== data.roomName) {
+              return current;
+            }
+            setNotice('Call declined.');
+            return null;
+          });
+          return;
+        }
+
+        if (data.type === 'ended') {
+          setCurrentCall(null);
+          setOutgoing(null);
+          setIncoming(null);
+          setNotice('Call ended.');
+        }
+      })
+      .subscribe();
+  }, [myUserId]);
+
+  const startCall = async (contact: SpeakContact) => {
+    if (!myUserId) {
+      return;
+    }
+
+    const roomName = `speak-${[myUserId, contact.userId].sort().join('-')}`;
+    setNotice('Calling...');
+    setOutgoing({ peerUserId: contact.userId, peerLabel: contact.name, roomName });
+
+    await sendSignal({
+      type: 'invite',
+      fromUserId: myUserId,
+      toUserId: contact.userId,
+      roomName,
+      fromName: myLabel,
+      fromPhone: myPhone,
+    });
+  };
+
+  const onFinishCall = async (
+    peerUserId: string,
+    roomName: string,
+    result: 'completed' | 'failed' | 'canceled'
+  ) => {
+    await sendSignal({
+      type: 'ended',
+      fromUserId: myUserId,
+      toUserId: peerUserId,
+      roomName,
+    });
+
+    setCurrentCall(null);
+    setOutgoing(null);
+    setIncoming(null);
+
+    if (result === 'failed') {
+      setNotice('Connection failed.');
+      return;
+    }
+
+    setNotice('Call ended.');
+  };
+
+  if (currentCall) {
+    return (
+      <InCallScreen
+        label={currentCall.peerLabel}
+        code={currentCall.peerUserId}
+        serverUrl={currentCall.serverUrl}
+        token={currentCall.token}
+        phase={currentCall.phase}
+        errorMessage={currentCall.errorMessage}
+        startedAtIso={currentCall.startedAtIso}
+        onFinish={result => {
+          void onFinishCall(currentCall.peerUserId, currentCall.roomName, result);
+        }}
+      />
+    );
+  }
+
+  if (incoming) {
+    const fromContact = contactsByUserId.get(incoming.fromUserId);
+    const fromLabel = fromContact?.name || incoming.fromName || incoming.fromPhone || 'Speak user';
+
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <Text style={styles.wordmark}>Speak</Text>
+        </View>
+        <View style={styles.center}>
+          <Text style={styles.title}>Incoming Call</Text>
+          <Text style={styles.subtitle}>From {fromLabel}</Text>
+          <TouchableOpacity
+            style={styles.callButton}
+            onPress={async () => {
+              const payload = incoming;
+              setIncoming(null);
+              await sendSignal({
+                type: 'accepted',
+                fromUserId: myUserId,
+                toUserId: payload.fromUserId,
+                roomName: payload.roomName,
+              });
+              await joinRoom(payload.fromUserId, fromLabel, payload.roomName);
+            }}
+          >
+            <Text style={styles.callButtonText}>Answer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.endButton}
+            onPress={async () => {
+              const payload = incoming;
+              setIncoming(null);
+              await sendSignal({
+                type: 'declined',
+                fromUserId: myUserId,
+                toUserId: payload.fromUserId,
+                roomName: payload.roomName,
+              });
+              setNotice('Call declined.');
+            }}
+          >
+            <Text style={styles.endButtonText}>Decline</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (outgoing) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <Text style={styles.wordmark}>Speak</Text>
+        </View>
+        <View style={styles.center}>
+          <Text style={styles.title}>Calling {outgoing.peerLabel}</Text>
+          <Text style={styles.subtitle}>Waiting for answer...</Text>
+          <TouchableOpacity
+            style={styles.endButton}
+            onPress={async () => {
+              const pending = outgoing;
+              setOutgoing(null);
+              await sendSignal({
+                type: 'declined',
+                fromUserId: myUserId,
+                toUserId: pending.peerUserId,
+                roomName: pending.roomName,
+              });
+              setNotice('Call canceled.');
+            }}
+          >
+            <Text style={styles.endButtonText}>End</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -153,7 +469,7 @@ export function PhoneShell() {
       {state === 'loading' ? (
         <View style={styles.center}>
           <ActivityIndicator color="#1a1a2e" />
-          <Text style={styles.status}>Loading contacts...</Text>
+          <Text style={styles.subtitle}>Loading contacts...</Text>
         </View>
       ) : null}
 
@@ -169,20 +485,25 @@ export function PhoneShell() {
       {state === 'ready' ? (
         <View style={styles.content}>
           <Text style={styles.title}>Speak Contacts</Text>
-          <Text style={styles.subtitle}>Found {speakContacts.length} registered contacts</Text>
+          {notice ? <Text style={styles.subtitle}>{notice}</Text> : null}
           <ScrollView contentContainerStyle={styles.listWrap}>
             {speakContacts.map(contact => (
-              <View key={`${contact.userId}-${contact.phoneE164}`} style={styles.row}>
+              <TouchableOpacity
+                key={`${contact.userId}-${contact.phoneE164}`}
+                style={styles.row}
+                onPress={() => {
+                  void startCall(contact);
+                }}
+              >
                 <View>
                   <Text style={styles.name}>{contact.name}</Text>
                   <Text style={styles.phone}>{contact.phoneE164}</Text>
                 </View>
-                <Text style={styles.badge}>Speak</Text>
-              </View>
+                <Text style={styles.badge}>Call</Text>
+              </TouchableOpacity>
             ))}
             {speakContacts.length === 0 ? <Text style={styles.empty}>No registered Speak contacts yet.</Text> : null}
           </ScrollView>
-          <Text style={styles.me}>Session: {myUserId}</Text>
         </View>
       ) : null}
     </SafeAreaView>
@@ -209,9 +530,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
   },
-  status: {
-    marginTop: 12,
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  subtitle: {
+    marginTop: 6,
+    marginBottom: 12,
     color: '#475569',
+    textAlign: 'center',
   },
   error: {
     color: '#b42318',
@@ -230,23 +564,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 14,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  subtitle: {
-    marginTop: 4,
-    marginBottom: 12,
-    color: '#475569',
-  },
   listWrap: {
     paddingBottom: 30,
+    paddingTop: 8,
   },
   row: {
     borderWidth: 1,
@@ -272,14 +592,37 @@ const styles = StyleSheet.create({
     color: '#0f8f4e',
     fontWeight: '700',
   },
+  callButton: {
+    width: 180,
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: '#0f8f4e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  callButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  endButton: {
+    width: 180,
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: '#b42318',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  endButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
   empty: {
     color: '#64748b',
     textAlign: 'center',
     marginTop: 30,
-  },
-  me: {
-    marginTop: 8,
-    color: '#94a3b8',
-    fontSize: 12,
   },
 });
