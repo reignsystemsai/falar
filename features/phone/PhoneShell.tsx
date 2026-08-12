@@ -354,11 +354,11 @@ export function PhoneShell() {
 
   const applyChosenNumber = (contactId: string, name: string, option: ContactNumberOption) => {
     const nextContact: SpeakContact = {
-      id: contactId,
+      id: `${contactId}:${option.rawNumber}`,
       name,
       number: option,
       sourceContactId: contactId,
-      favorite: contacts.find(item => item.id === contactId)?.favorite ?? false,
+      favorite: contacts.find(item => item.sourceContactId === contactId)?.favorite ?? false,
     };
 
     setContacts(current => {
