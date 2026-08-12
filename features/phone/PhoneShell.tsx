@@ -1,6 +1,6 @@
 import { Contact } from 'expo-contacts';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   SafeAreaView,
@@ -15,9 +15,13 @@ import { EmptyState } from './components/EmptyState';
 import { FavoritesScreen } from './screens/FavoritesScreen';
 import { KeypadScreen } from './screens/KeypadScreen';
 import { RecentsScreen } from './screens/RecentsScreen';
-import { placePhoneCall } from './phoneCall';
+import { OutgoingCallScreen } from './screens/OutgoingCallScreen';
+import { IncomingCallScreen } from './screens/IncomingCallScreen';
+import { ActiveCallScreen } from './screens/ActiveCallScreen';
 import { SpeakPhoneTheme } from './speakPhoneTheme';
 import { supabase } from '../../lib/supabase';
+import { useSpeakCall } from './calls/SpeakCallProvider';
+import { cleanContactLabel, normalizeSpeakNumber } from './calls/phoneFormatting';
 
 type ContactPhoneShape = {
   number?: string | null;
@@ -49,6 +53,20 @@ type PhoneScreen =
 const { colors, radius } = SpeakPhoneTheme;
 
 export function PhoneShell() {
+  const {
+    phase,
+    currentCall,
+    muted,
+    callMinimized,
+    startCall,
+    acceptCall,
+    declineCall,
+    endCall,
+    toggleMute,
+    minimizeCall,
+    restoreCall,
+  } = useSpeakCall();
+
   const [stack, setStack] = useState<PhoneScreen[]>(['home']);
   const [keypadCode, setKeypadCode] = useState('');
   const [query, setQuery] = useState('');
@@ -67,9 +85,38 @@ export function PhoneShell() {
   const [loadingContactPicker, setLoadingContactPicker] = useState(false);
   const [notice, setNotice] = useState('');
   const [selectedContact, setSelectedContact] = useState<SpeakContact | null>(null);
-  const [activeCallBanner, setActiveCallBanner] = useState<string | null>(null);
 
+  const [profileName, setProfileName] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [didLoadProfile, setDidLoadProfile] = useState(false);
+
+  const [activeDuration, setActiveDuration] = useState(0);
+  const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const screen = stack[stack.length - 1] || 'home';
+
+  useEffect(() => {
+    if (phase === 'active') {
+      if (!activeTimerRef.current) {
+        activeTimerRef.current = setInterval(() => {
+          setActiveDuration(value => value + 1);
+        }, 1000);
+      }
+    } else {
+      if (activeTimerRef.current) {
+        clearInterval(activeTimerRef.current);
+        activeTimerRef.current = null;
+      }
+      setActiveDuration(0);
+    }
+
+    return () => {
+      if (activeTimerRef.current) {
+        clearInterval(activeTimerRef.current);
+        activeTimerRef.current = null;
+      }
+    };
+  }, [phase]);
 
   const pushScreen = (next: PhoneScreen) => {
     setStack(current => [...current, next]);
@@ -101,6 +148,75 @@ export function PhoneShell() {
     return data.user.id;
   };
 
+  const loadSpeakProfile = async () => {
+    const userId = await getUserId();
+    if (!userId) {
+      return;
+    }
+
+    const { data } = await supabase
+      .from('speak_profiles')
+      .select('display_name, phone_e164')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (data?.display_name) {
+      setProfileName(data.display_name);
+    }
+    if (data?.phone_e164) {
+      setProfilePhone(data.phone_e164);
+    }
+  };
+
+  useEffect(() => {
+    if (screen === 'profile' && !didLoadProfile) {
+      setDidLoadProfile(true);
+      void loadSpeakProfile();
+    }
+  }, [didLoadProfile, screen]);
+
+  const saveProfile = async () => {
+    const userId = await getUserId();
+    if (!userId) {
+      Alert.alert('Unavailable', 'Could not identify the current Speak user.');
+      return;
+    }
+
+    const displayName = profileName.trim();
+    if (!displayName) {
+      Alert.alert('Name required', 'Please enter your display name.');
+      return;
+    }
+
+    const normalized = normalizeSpeakNumber(profilePhone);
+    if (!normalized) {
+      Alert.alert('Country code required', 'Please enter your phone number with country code.');
+      return;
+    }
+
+    setSavingProfile(true);
+    const { error } = await supabase.from('speak_profiles').upsert(
+      {
+        user_id: userId,
+        display_name: displayName,
+        phone_e164: normalized,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: 'user_id',
+      }
+    );
+    setSavingProfile(false);
+
+    if (error) {
+      Alert.alert('Profile save failed', error.message);
+      return;
+    }
+
+    setProfilePhone(normalized);
+    Alert.alert('Saved', 'My Speak Profile updated.');
+  };
+
   const saveSelectedContact = async (contactName: string, numbers: string[]) => {
     try {
       const userId = await getUserId();
@@ -120,41 +236,6 @@ export function PhoneShell() {
     } catch (error) {
       console.warn('Unable to persist selected contact.', error);
       setNotice('Could not save contact. Calling is still available.');
-    }
-  };
-
-  const logCallRequest = async (phoneNumber: string, contactName?: string) => {
-    try {
-      const userId = await getUserId();
-      if (!userId) return;
-
-      const { error } = await supabase.from('call_sessions').insert({
-        user_id: userId,
-        contact_name: contactName || null,
-        phone_number: phoneNumber,
-        status: 'requested',
-        requested_at: new Date().toISOString(),
-      });
-
-      if (error) {
-        throw error;
-      }
-    } catch (error) {
-      console.warn('Unable to log call request.', error);
-    }
-  };
-
-  const placeSharedPhoneCall = async (rawNumber: string, contactName?: string) => {
-    setNotice('');
-    void logCallRequest(rawNumber, contactName);
-
-    try {
-      await placePhoneCall(rawNumber);
-    } catch (error) {
-      Alert.alert(
-        'Unable to call',
-        error instanceof Error ? error.message : 'The phone call could not be started.'
-      );
     }
   };
 
@@ -188,7 +269,7 @@ export function PhoneShell() {
       options.push({
         rawNumber: normalized,
         displayNumber: raw || normalized,
-        label: item.label || 'Phone',
+        label: cleanContactLabel(item.label),
       });
     }
 
@@ -247,7 +328,7 @@ export function PhoneShell() {
         'Which number do you want to use?',
         [
           ...options.map(option => ({
-            text: `${option.label || 'Phone'} ${option.displayNumber}`,
+            text: `${option.label || 'Mobile'} ${option.displayNumber}`,
             onPress: () => {
               applyChosenNumber(picked.id, contactName, option);
               pushScreen('detail');
@@ -303,6 +384,36 @@ export function PhoneShell() {
     pushScreen(next);
   };
 
+  const startSpeakCallFromContact = async (contact: SpeakContact) => {
+    setSelectedContact(contact);
+
+    await startCall({
+      id: contact.id,
+      name: contact.name,
+      rawNumber: contact.number.rawNumber,
+      displayNumber: contact.number.displayNumber,
+    });
+  };
+
+  const handleOutgoingBack = async () => {
+    await endCall();
+    if (selectedContact) {
+      setStack(['home', 'contacts', 'detail']);
+      return;
+    }
+    goBack();
+  };
+
+  const handleIncomingBack = async () => {
+    await declineCall();
+    goHome();
+  };
+
+  const handleActiveBack = () => {
+    minimizeCall();
+    goHome();
+  };
+
   const renderHeader = (title: string, subtitle?: string) => (
     <View style={styles.headerRow}>
       <TouchableOpacity style={styles.iconButton} onPress={goBack}>
@@ -333,7 +444,7 @@ export function PhoneShell() {
       <View style={styles.contactTextWrap}>
         <Text style={styles.contactName}>{contact.name}</Text>
         <Text style={styles.contactMeta}>
-          {(contact.number.label || 'Phone').replace(/^_\$!<(.+)>!\$_$/, '$1')} {'\u2022'} {contact.number.displayNumber}
+          {cleanContactLabel(contact.number.label)} {'\u2022'} {contact.number.displayNumber}
         </Text>
       </View>
 
@@ -343,7 +454,9 @@ export function PhoneShell() {
 
       <TouchableOpacity
         style={styles.contactCallIconButton}
-        onPress={() => void placeSharedPhoneCall(contact.number.rawNumber, contact.name)}
+        onPress={() => {
+          void startSpeakCallFromContact(contact);
+        }}
       >
         <Ionicons name="call" size={18} color={colors.blue} />
       </TouchableOpacity>
@@ -421,7 +534,7 @@ export function PhoneShell() {
       </TouchableOpacity>
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-        {filteredContacts.length ? filteredContacts.map(renderContactRow) : <Text style={styles.emptySectionText}>No Speak contacts yet.</Text>}
+        {filteredContacts.length ? filteredContacts.map(renderContactRow) : <Text style={styles.emptySectionText}>Add from iPhone Contacts to start calling.</Text>}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       </ScrollView>
     </View>
@@ -441,12 +554,14 @@ export function PhoneShell() {
         </View>
         <Text style={styles.detailName}>{selectedContact.name}</Text>
         <Text style={styles.detailNumber}>{selectedContact.number.displayNumber}</Text>
-        <Text style={styles.detailLabel}>{(selectedContact.number.label || 'Phone').replace(/^_\$!<(.+)>!\$_$/, '$1')}</Text>
+        <Text style={styles.detailLabel}>{cleanContactLabel(selectedContact.number.label)}</Text>
       </View>
 
       <TouchableOpacity
         style={styles.callOrbOuter}
-        onPress={() => void placeSharedPhoneCall(selectedContact.number.rawNumber, selectedContact.name)}
+        onPress={() => {
+          void startSpeakCallFromContact(selectedContact);
+        }}
       >
         <View style={styles.callOrbInner}>
           <Ionicons name="call" size={34} color={colors.text} />
@@ -468,7 +583,10 @@ export function PhoneShell() {
           isFavorite: true,
         }))}
         onCall={number => {
-          void placeSharedPhoneCall(number);
+          const contact = favoriteContacts.find(item => item.number.displayNumber === number);
+          if (contact) {
+            void startSpeakCallFromContact(contact);
+          }
         }}
       />
     </View>
@@ -479,8 +597,8 @@ export function PhoneShell() {
       {renderHeader('Recents')}
       <RecentsScreen
         recents={recents}
-        onRedial={number => {
-          void placeSharedPhoneCall(number);
+        onRedial={() => {
+          Alert.alert('Speak contact required', 'Choose a Speak contact to start a Speak call.');
         }}
       />
     </View>
@@ -492,8 +610,8 @@ export function PhoneShell() {
       <KeypadScreen
         code={keypadCode}
         onChangeCode={setKeypadCode}
-        onCall={number => {
-          void placeSharedPhoneCall(number);
+        onCall={() => {
+          Alert.alert('Use contacts for Speak calls', 'Speak-to-Speak calling in this build starts from Contacts.');
         }}
       />
     </View>
@@ -502,15 +620,33 @@ export function PhoneShell() {
   const profileView = (
     <View style={styles.panel}>
       {renderHeader('My Speak Profile')}
-      <EmptyState title="Profile setup" message="Profile setup will be completed in this build." />
+
+      <View style={styles.profileCard}>
+        <Text style={styles.profileLabel}>Display Name</Text>
+        <TextInput
+          value={profileName}
+          onChangeText={setProfileName}
+          placeholder="Your name"
+          placeholderTextColor={colors.secondary}
+          style={styles.profileInput}
+        />
+
+        <Text style={styles.profileLabel}>My Phone Number</Text>
+        <TextInput
+          value={profilePhone}
+          onChangeText={setProfilePhone}
+          placeholder="+1 555 123 4567"
+          placeholderTextColor={colors.secondary}
+          style={styles.profileInput}
+          keyboardType="phone-pad"
+        />
+
+        <TouchableOpacity style={styles.profileSaveButton} onPress={() => void saveProfile()} disabled={savingProfile}>
+          <Text style={styles.profileSaveText}>{savingProfile ? 'Saving...' : 'Save Profile'}</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
-
-  const minimizedBanner = activeCallBanner ? (
-    <TouchableOpacity style={styles.banner} onPress={() => setActiveCallBanner(null)}>
-      <Text style={styles.bannerText}>Active call with {activeCallBanner} - Tap to return</Text>
-    </TouchableOpacity>
-  ) : null;
 
   let content = homeView;
   if (screen === 'contacts') {
@@ -526,6 +662,64 @@ export function PhoneShell() {
   } else if (screen === 'profile') {
     content = profileView;
   }
+
+  const minimizedBanner = callMinimized && phase === 'active' && currentCall ? (
+    <TouchableOpacity
+      style={styles.banner}
+      onPress={() => {
+        restoreCall();
+      }}
+    >
+      <Text style={styles.bannerText}>Active call with {currentCall.contactName} - Tap to return</Text>
+    </TouchableOpacity>
+  ) : null;
+
+  const callOverlay = !callMinimized && currentCall ? (
+    phase === 'incoming' ? (
+      <IncomingCallScreen
+        contact={{ name: currentCall.contactName, number: currentCall.contactNumber }}
+        onBack={() => {
+          void handleIncomingBack();
+        }}
+        onDecline={() => {
+          void declineCall();
+          goHome();
+        }}
+        onAnswer={() => {
+          void acceptCall();
+        }}
+      />
+    ) : phase === 'outgoing' ? (
+      <OutgoingCallScreen
+        contact={{ name: currentCall.contactName, number: currentCall.contactNumber }}
+        onBack={() => {
+          void handleOutgoingBack();
+        }}
+        onEndCall={() => {
+          void endCall();
+          goBack();
+        }}
+      />
+    ) : phase === 'active' ? (
+      <ActiveCallScreen
+        contact={{ name: currentCall.contactName, number: currentCall.contactNumber }}
+        durationSeconds={activeDuration}
+        muted={muted}
+        onBack={handleActiveBack}
+        onMute={() => {
+          void toggleMute();
+        }}
+        onEndCall={() => {
+          void endCall();
+          goHome();
+        }}
+      />
+    ) : phase === 'connecting' ? (
+      <View style={styles.connectingOverlay}>
+        <Text style={styles.connectingTitle}>Connecting...</Text>
+      </View>
+    ) : null
+  ) : null;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -554,6 +748,8 @@ export function PhoneShell() {
           </TouchableOpacity>
         </View>
       ) : null}
+
+      {callOverlay ? <View style={styles.callOverlay}>{callOverlay}</View> : null}
     </SafeAreaView>
   );
 }
@@ -966,6 +1162,40 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 0 },
   },
+  profileCard: {
+    marginTop: 16,
+    borderRadius: radius.medium,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: 14,
+    gap: 8,
+  },
+  profileLabel: {
+    color: colors.secondary,
+    fontSize: 13,
+  },
+  profileInput: {
+    minHeight: 44,
+    borderRadius: radius.small,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.backgroundAlt,
+    color: colors.text,
+    paddingHorizontal: 12,
+  },
+  profileSaveButton: {
+    marginTop: 10,
+    minHeight: 48,
+    borderRadius: radius.small,
+    backgroundColor: colors.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileSaveText: {
+    color: colors.text,
+    fontWeight: '700',
+  },
   emptySectionText: {
     color: colors.secondary,
     marginTop: 6,
@@ -1009,6 +1239,21 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     color: colors.text,
+    fontWeight: '700',
+  },
+  callOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.background,
+  },
+  connectingOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+  connectingTitle: {
+    color: colors.text,
+    fontSize: 20,
     fontWeight: '700',
   },
 });

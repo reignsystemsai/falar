@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { Alert } from 'react-native';
+import { AudioSession } from '@livekit/react-native';
 import { Room } from 'livekit-client';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../../../lib/supabase';
@@ -90,6 +91,12 @@ async function disconnectRoom(roomRef: React.MutableRefObject<Room | null>) {
   if (roomRef.current) {
     roomRef.current.disconnect();
     roomRef.current = null;
+  }
+
+  try {
+    await AudioSession.stopAudioSession();
+  } catch {
+    // Ignore teardown errors if audio session is not active.
   }
 }
 
@@ -228,14 +235,17 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
     [watchActiveCall]
   );
 
-  const hydrateCallerName = useCallback(async (callerId: string): Promise<string> => {
+  const hydrateCallerProfile = useCallback(async (callerId: string): Promise<{ name: string; number: string }> => {
     const { data } = await supabase
       .from('speak_profiles')
-      .select('display_name')
+      .select('display_name, phone_e164')
       .eq('user_id', callerId)
       .maybeSingle();
 
-    return (data?.display_name as string | undefined) || 'Speak User';
+    return {
+      name: (data?.display_name as string | undefined) || 'Speak User',
+      number: (data?.phone_e164 as string | undefined) || 'Unknown number',
+    };
   }, []);
 
   const acceptCall = useCallback(async () => {
@@ -352,15 +362,15 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
             const call = payload.new as AppCallRow;
 
             if (call.status === 'ringing') {
-              const callerName = await hydrateCallerName(call.caller_id);
+              const caller = await hydrateCallerProfile(call.caller_id);
 
               setCurrentCall({
                 id: call.id,
                 callerId: call.caller_id,
                 calleeId: call.callee_id,
                 roomName: call.room_name,
-                contactName: callerName,
-                contactNumber: 'Speak call',
+                contactName: caller.name,
+                contactNumber: caller.number,
                 initiatedByMe: false,
               });
               setCallMinimized(false);
@@ -400,7 +410,7 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
         incomingChannelRef.current = null;
       }
     };
-  }, [clearCallState, hydrateCallerName, watchActiveCall]);
+  }, [clearCallState, hydrateCallerProfile, watchActiveCall]);
 
   const value = useMemo<SpeakCallContextValue>(
     () => ({
