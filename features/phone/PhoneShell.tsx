@@ -492,6 +492,37 @@ export function PhoneShell() {
   };
 
   const openContactDetail = (contact: SpeakContact) => {
+    const related = contacts.filter(item => {
+      if (contact.sourceContactId && item.sourceContactId) {
+        return item.sourceContactId === contact.sourceContactId;
+      }
+
+      return item.name === contact.name;
+    });
+
+    const uniqueByNumber = related.filter(
+      (item, index, all) =>
+        all.findIndex(candidate => candidate.number.rawNumber === item.number.rawNumber) === index
+    );
+
+    if (uniqueByNumber.length > 1) {
+      Alert.alert(
+        contact.name,
+        'Which number do you want to use?',
+        [
+          ...uniqueByNumber.map(option => ({
+            text: `${cleanContactLabel(option.number.label)} ${option.number.displayNumber}`,
+            onPress: () => {
+              setSelectedContact(option);
+              pushScreen('detail');
+            },
+          })),
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
     setSelectedContact(contact);
     pushScreen('detail');
   };
@@ -532,6 +563,12 @@ export function PhoneShell() {
   };
 
   const startSpeakCallFromContact = async (contact: SpeakContact) => {
+    const normalized = normalizeSpeakNumber(contact.number.rawNumber || contact.number.displayNumber);
+    if (!normalized) {
+      Alert.alert('Country code required', 'Add the country code to this contact to call them on Speak.');
+      return;
+    }
+
     const readyForMedia = await ensureMediaPermissions();
     if (!readyForMedia) {
       return;
@@ -542,7 +579,7 @@ export function PhoneShell() {
     await startCall({
       id: contact.id,
       name: contact.name,
-      rawNumber: contact.number.rawNumber,
+      rawNumber: normalized,
       displayNumber: contact.number.displayNumber,
     });
   };

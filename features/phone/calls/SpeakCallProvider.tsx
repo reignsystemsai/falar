@@ -110,6 +110,11 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
   const incomingChannelRef = useRef<RealtimeChannel | null>(null);
   const activeCallChannelRef = useRef<RealtimeChannel | null>(null);
   const userIdRef = useRef<string | null>(null);
+  const currentCallRef = useRef<CurrentCall | null>(null);
+
+  useEffect(() => {
+    currentCallRef.current = currentCall;
+  }, [currentCall]);
 
   const clearCallState = useCallback(async () => {
     await disconnectRoom(roomRef);
@@ -145,7 +150,14 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
           async payload => {
             const row = payload.new as AppCallRow;
 
-            if (row.status === 'accepted' && phase === 'outgoing') {
+            const activeCall = currentCallRef.current;
+
+            if (
+              row.status === 'accepted' &&
+              activeCall?.id === callId &&
+              activeCall.initiatedByMe &&
+              !roomRef.current
+            ) {
               try {
                 setPhase('connecting');
                 const room = await connectSpeakRoom(callId);
@@ -167,7 +179,7 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
 
       activeCallChannelRef.current = channel;
     },
-    [clearCallState, phase]
+    [clearCallState]
   );
 
   const startCall = useCallback(
@@ -183,7 +195,7 @@ export function SpeakCallProvider({ children }: { children: React.ReactNode }) {
       const normalized = normalizeSpeakNumber(target.rawNumber || target.displayNumber);
 
       if (!normalized) {
-        Alert.alert('Country code required', 'Add the country code to this contact before using Speak calling.');
+        Alert.alert('Country code required', 'Add the country code to this contact to call them on Speak.');
         return;
       }
 
