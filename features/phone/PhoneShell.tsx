@@ -15,6 +15,7 @@ import { PhoneTabs } from './PhoneTabs';
 import { KeypadScreen } from './screens/KeypadScreen';
 import { PhoneTabKey } from './phoneTypes';
 import { placePhoneCall } from './phoneCall';
+import { SpeakPhoneTheme } from './speakPhoneTheme';
 import { supabase } from '../../lib/supabase';
 
 type ContactPhoneShape = {
@@ -35,15 +36,19 @@ type SpeakContact = {
   favorite: boolean;
 };
 
+type PhoneView = 'home' | 'tabs' | 'contactDetail';
+
+const { colors } = SpeakPhoneTheme;
+
 export function PhoneShell() {
   const [activeTab, setActiveTab] = useState<PhoneTabKey>('contacts');
+  const [view, setView] = useState<PhoneView>('home');
   const [keypadCode, setKeypadCode] = useState('');
   const [query, setQuery] = useState('');
   const [contacts, setContacts] = useState<SpeakContact[]>([]);
   const [loadingContactPicker, setLoadingContactPicker] = useState(false);
   const [notice, setNotice] = useState('');
-
-  const activeTabName = activeTab as string;
+  const [selectedContact, setSelectedContact] = useState<SpeakContact | null>(null);
 
   const getUserId = async (): Promise<string | null> => {
     const {
@@ -158,15 +163,22 @@ export function PhoneShell() {
   };
 
   const applyChosenNumber = (contactId: string, name: string, option: ContactNumberOption) => {
+    const nextContact: SpeakContact = {
+      id: contactId,
+      name,
+      number: option,
+      favorite: contacts.find(item => item.id === contactId)?.favorite ?? false,
+    };
+
     setContacts(current => {
       const withoutSameNumber = current.filter(
         item => !(item.id === contactId && item.number.rawNumber === option.rawNumber)
       );
-      const existingFavorite = current.find(item => item.id === contactId)?.favorite ?? false;
 
-      return [{ id: contactId, name, number: option, favorite: existingFavorite }, ...withoutSameNumber];
+      return [nextContact, ...withoutSameNumber];
     });
 
+    setSelectedContact(nextContact);
     void saveSelectedContact(name, [option.rawNumber]);
   };
 
@@ -193,6 +205,7 @@ export function PhoneShell() {
 
       if (options.length === 1) {
         applyChosenNumber(picked.id, contactName, options[0]);
+        setView('contactDetail');
         return;
       }
 
@@ -202,7 +215,10 @@ export function PhoneShell() {
         [
           ...options.map(option => ({
             text: `${option.label || 'Phone'} ${option.displayNumber}`,
-            onPress: () => applyChosenNumber(picked.id, contactName, option),
+            onPress: () => {
+              applyChosenNumber(picked.id, contactName, option);
+              setView('contactDetail');
+            },
           })),
           { text: 'Cancel', style: 'cancel' },
         ]
@@ -229,7 +245,6 @@ export function PhoneShell() {
   }, [contacts, query]);
 
   const favoriteContacts = filteredContacts.filter(item => item.favorite);
-  const allContacts = filteredContacts;
 
   const toggleFavorite = (contact: SpeakContact) => {
     setContacts(current =>
@@ -243,93 +258,160 @@ export function PhoneShell() {
     );
   };
 
+  const openContactDetail = (contact: SpeakContact) => {
+    setSelectedContact(contact);
+    setView('contactDetail');
+  };
+
   const renderContactRow = (contact: SpeakContact) => (
-    <View key={`${contact.id}-${contact.number.rawNumber}`} style={styles.contactRow}>
+    <TouchableOpacity
+      key={`${contact.id}-${contact.number.rawNumber}`}
+      style={styles.contactRow}
+      onPress={() => openContactDetail(contact)}
+    >
       <View style={styles.avatarWrap}>
         <Text style={styles.avatarText}>{initials(contact.name)}</Text>
       </View>
 
       <View style={styles.contactTextWrap}>
         <Text style={styles.contactName}>{contact.name}</Text>
-        <Text style={styles.contactMeta}>
-          {contact.number.label || 'Phone'} {'\u2022'} {contact.number.displayNumber}
-        </Text>
+        <Text style={styles.contactMeta}>{contact.number.displayNumber}</Text>
       </View>
 
       <TouchableOpacity style={styles.favoriteButton} onPress={() => toggleFavorite(contact)}>
-        <Text style={styles.favoriteButtonText}>{contact.favorite ? '\u2605' : '\u2606'}</Text>
+        <Text style={styles.favoriteButtonText}>{contact.favorite ? '★' : '☆'}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={styles.callButton}
+        style={styles.contactCallIconButton}
         onPress={() => void placeSharedPhoneCall(contact.number.rawNumber, contact.name)}
       >
-        <Text style={styles.callButtonText}>Call</Text>
+        <Text style={styles.contactCallIcon}>☎</Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+
+  const homeView = (
+    <View style={styles.homePanel}>
+      <Text style={styles.homeLogo}>S</Text>
+      <Text style={styles.homeTitle}>Speak</Text>
+      <Text style={styles.homeTagline}>The world speaks here.</Text>
+
+      <View style={styles.readyRing}>
+        <View style={styles.readyRingInner}>
+          <Text style={styles.wave}>▂▅▇▅▂</Text>
+          <Text style={styles.readyText}>Ready</Text>
+        </View>
+      </View>
+
+      <Text style={styles.languagesTitle}>Speak languages</Text>
+      <View style={styles.languageRow}>
+        <Text style={styles.languageText}>English</Text>
+      </View>
+      <View style={styles.languageRow}>
+        <Text style={styles.languageText}>Spanish</Text>
+      </View>
+
+      <TouchableOpacity
+        style={styles.speakNowButton}
+        onPress={() => {
+          setActiveTab('contacts');
+          setView('tabs');
+        }}
+      >
+        <Text style={styles.speakNowText}>Speak Now</Text>
       </TouchableOpacity>
     </View>
   );
 
   const contactsView = (
     <View style={styles.panel}>
-      <View style={styles.headerWrap}>
-        <View>
-          <Text style={styles.wordmark}>Speak</Text>
-          <Text style={styles.subtitle}>Choose a contact to call</Text>
-        </View>
-        <View style={styles.profileStub}>
-          <Text style={styles.profileStubText}>A</Text>
-        </View>
+      <View style={styles.contactsTopRow}>
+        <Text style={styles.brandCompact}>S Speak</Text>
       </View>
+
+      <Text style={styles.contactsTitle}>Contacts</Text>
+      <Text style={styles.contactsSubtitle}>Find someone and start a call.</Text>
 
       <View style={styles.searchWrap}>
         <TextInput
           value={query}
           onChangeText={setQuery}
           placeholder="Search contacts"
-          placeholderTextColor="#8792a2"
+          placeholderTextColor={colors.secondary}
           style={styles.searchInput}
         />
       </View>
 
+      <View style={styles.segment}>
+        <View style={styles.segmentActive}>
+          <Text style={styles.segmentActiveText}>Contacts</Text>
+        </View>
+        <View style={styles.segmentInactive}>
+          <Text style={styles.segmentInactiveText}>Recents</Text>
+        </View>
+      </View>
+
       <TouchableOpacity style={styles.pickButton} onPress={() => void openContactPicker()} disabled={loadingContactPicker}>
-        <Text style={styles.pickButtonText}>
-          {loadingContactPicker ? 'Opening Contacts...' : 'Add from iPhone Contacts'}
-        </Text>
+        <Text style={styles.pickButtonText}>{loadingContactPicker ? 'Opening Contacts...' : 'Add from iPhone Contacts'}</Text>
       </TouchableOpacity>
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-        <Text style={styles.sectionTitle}>★ Favorites</Text>
-        {favoriteContacts.length ? (
-          favoriteContacts.map(renderContactRow)
-        ) : (
-          <Text style={styles.emptySectionText}>No favorites yet.</Text>
-        )}
-
-        <Text style={styles.sectionTitle}>All Contacts</Text>
-        {allContacts.length ? (
-          allContacts.map(renderContactRow)
-        ) : (
-          <Text style={styles.emptySectionText}>No Speak contacts yet.</Text>
-        )}
-
+        {filteredContacts.length ? filteredContacts.map(renderContactRow) : <Text style={styles.emptySectionText}>No Speak contacts yet.</Text>}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       </ScrollView>
     </View>
   );
 
-  const favoritesOnlyView = (
+  const contactDetailView = selectedContact ? (
     <View style={styles.panel}>
-      <Text style={styles.wordmark}>Speak</Text>
-      <Text style={styles.subtitle}>Favorite contacts</Text>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => {
+          setView('tabs');
+          setActiveTab('contacts');
+        }}
+      >
+        <Text style={styles.backText}>‹ Back</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.detailEyebrow}>CONTACT DETAIL</Text>
+      <Text style={styles.detailTitle}>Ready to Call.</Text>
+      <Text style={styles.detailSubtitle}>Tap the button below to start a voice call immediately.</Text>
+
+      <View style={styles.detailCard}>
+        <View style={styles.detailAvatarWrap}>
+          <Text style={styles.detailAvatarText}>{initials(selectedContact.name)}</Text>
+        </View>
+        <Text style={styles.detailName}>{selectedContact.name}</Text>
+        <Text style={styles.detailNumber}>{selectedContact.number.displayNumber}</Text>
+        <Text style={styles.detailLabel}>{selectedContact.number.label || 'Phone'}</Text>
+      </View>
+
+      <TouchableOpacity
+        style={styles.callOrbOuter}
+        onPress={() => void placeSharedPhoneCall(selectedContact.number.rawNumber, selectedContact.name)}
+      >
+        <View style={styles.callOrbInner}>
+          <Text style={styles.callOrbIcon}>☎</Text>
+        </View>
+      </TouchableOpacity>
+    </View>
+  ) : (
+    <EmptyState title="No contact selected" message="Choose a contact to start a call." />
+  );
+
+  const favoritesView = (
+    <View style={styles.panel}>
+      <Text style={styles.brandCompact}>S Speak</Text>
+      <Text style={styles.contactsTitle}>Favorites</Text>
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {favoriteContacts.length ? favoriteContacts.map(renderContactRow) : <Text style={styles.emptySectionText}>No favorites yet.</Text>}
       </ScrollView>
     </View>
   );
 
-  const recentsView = (
-    <EmptyState title="No recents yet" message="Place a call from Contacts or Keypad to see recents later." />
-  );
+  const recentsView = <EmptyState title="No recents yet" message="No recents yet" />;
 
   const keypadView = (
     <KeypadScreen
@@ -341,14 +423,30 @@ export function PhoneShell() {
     />
   );
 
-  const content =
-    activeTabName === 'favorites'
-      ? favoritesOnlyView
-      : activeTabName === 'recents'
-        ? recentsView
-        : activeTabName === 'keypad'
-          ? keypadView
-          : contactsView;
+  let content = contactsView;
+  if (activeTab === 'favorites') {
+    content = favoritesView;
+  } else if (activeTab === 'recents') {
+    content = recentsView;
+  } else if (activeTab === 'keypad') {
+    content = keypadView;
+  }
+
+  if (view === 'home') {
+    return (
+      <SafeAreaView style={styles.safe}>
+        {homeView}
+      </SafeAreaView>
+    );
+  }
+
+  if (view === 'contactDetail') {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.content}>{contactDetailView}</View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -371,7 +469,7 @@ function initials(name: string): string {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#f7f8fa',
+    backgroundColor: colors.background,
   },
   content: {
     flex: 1,
@@ -380,113 +478,222 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 18,
     paddingTop: 12,
+    backgroundColor: colors.background,
   },
-  headerWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  homePanel: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    backgroundColor: colors.background,
   },
-  wordmark: {
+  homeLogo: {
+    color: colors.cyan,
+    fontSize: 58,
+    fontWeight: '300',
+    textAlign: 'center',
+  },
+  homeTitle: {
+    color: colors.text,
+    textAlign: 'center',
     fontSize: 36,
     fontWeight: '800',
-    color: '#102347',
+    marginTop: -8,
   },
-  subtitle: {
+  homeTagline: {
+    color: colors.secondary,
+    textAlign: 'center',
     marginTop: 2,
-    color: '#52607a',
+  },
+  readyRing: {
+    alignSelf: 'center',
+    width: 228,
+    height: 228,
+    borderRadius: 114,
+    borderWidth: 1,
+    borderColor: colors.blueDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 18,
+  },
+  readyRingInner: {
+    width: 158,
+    height: 158,
+    borderRadius: 79,
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: colors.cyan,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.blue,
+    shadowOpacity: 0.9,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  wave: {
+    color: colors.cyan,
+    fontSize: 34,
+  },
+  readyText: {
+    color: colors.text,
+    marginTop: 8,
+    fontWeight: '700',
+  },
+  languagesTitle: {
+    color: colors.text,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  languageRow: {
+    minHeight: 54,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  languageText: {
+    color: colors.text,
     fontSize: 16,
   },
-  profileStub: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#102347',
+  speakNowButton: {
+    marginTop: 6,
+    minHeight: 56,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.cyan,
+    backgroundColor: colors.blue,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  profileStubText: {
-    color: '#fff',
+  speakNowText: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  contactsTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  brandCompact: {
+    color: colors.cyan,
+    fontSize: 24,
     fontWeight: '700',
   },
+  contactsTitle: {
+    color: colors.text,
+    fontSize: 34,
+    fontWeight: '800',
+    marginTop: 10,
+  },
+  contactsSubtitle: {
+    color: colors.secondary,
+    marginTop: 2,
+    marginBottom: 14,
+  },
   searchWrap: {
-    marginTop: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#d4dae3',
-    backgroundColor: '#fff',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     paddingHorizontal: 12,
   },
   searchInput: {
     height: 44,
-    color: '#102347',
+    color: colors.text,
     fontSize: 15,
   },
-  pickButton: {
+  segment: {
     marginTop: 12,
+    marginBottom: 12,
+    backgroundColor: colors.backgroundAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  segmentActive: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.blueDeep,
+  },
+  segmentInactive: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentActiveText: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  segmentInactiveText: {
+    color: colors.secondary,
+    fontWeight: '600',
+  },
+  pickButton: {
     minHeight: 48,
     borderRadius: 12,
-    backgroundColor: '#132033',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pickButtonText: {
-    color: '#fff',
+    color: colors.text,
     fontWeight: '700',
     fontSize: 15,
   },
   list: {
     flex: 1,
-    marginTop: 14,
+    marginTop: 12,
   },
   listContent: {
     paddingBottom: 24,
   },
-  sectionTitle: {
-    color: '#102347',
-    fontWeight: '700',
-    fontSize: 17,
-    marginTop: 10,
-    marginBottom: 8,
-  },
-  emptySectionText: {
-    color: '#7a8699',
-    marginBottom: 8,
-  },
   contactRow: {
     minHeight: 72,
     borderRadius: 14,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#e0e5ec',
+    borderColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    marginBottom: 8,
+    marginBottom: 10,
     gap: 10,
   },
   avatarWrap: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#dbe6f7',
+    backgroundColor: colors.backgroundAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    color: '#102347',
+    color: colors.cyan,
     fontWeight: '700',
   },
   contactTextWrap: {
     flex: 1,
   },
   contactName: {
-    color: '#102347',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '700',
   },
   contactMeta: {
     marginTop: 3,
-    color: '#6d7b90',
+    color: colors.secondary,
     fontSize: 13,
   },
   favoriteButton: {
@@ -495,28 +702,125 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f0f3f8',
+    backgroundColor: colors.backgroundAlt,
   },
   favoriteButtonText: {
-    color: '#102347',
+    color: colors.text,
     fontSize: 18,
   },
-  callButton: {
-    minWidth: 62,
+  contactCallIconButton: {
+    width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#18a957',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 14,
+    backgroundColor: colors.backgroundAlt,
   },
-  callButtonText: {
-    color: '#fff',
+  contactCallIcon: {
+    color: colors.blue,
+    fontSize: 20,
+  },
+  detailEyebrow: {
+    color: colors.cyan,
     fontWeight: '700',
+    fontSize: 11,
+    marginTop: 12,
+  },
+  detailTitle: {
+    color: colors.text,
+    fontSize: 32,
+    fontWeight: '800',
+    marginTop: 5,
+  },
+  detailSubtitle: {
+    marginTop: 6,
+    color: colors.secondary,
+    maxWidth: 280,
+    lineHeight: 20,
+  },
+  detailCard: {
+    marginTop: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingVertical: 22,
+    alignItems: 'center',
+  },
+  detailAvatarWrap: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.backgroundAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  detailAvatarText: {
+    color: colors.cyan,
+    fontSize: 30,
+    fontWeight: '700',
+  },
+  detailName: {
+    marginTop: 14,
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  detailNumber: {
+    marginTop: 6,
+    color: colors.secondary,
+    fontSize: 15,
+  },
+  detailLabel: {
+    marginTop: 3,
+    color: colors.muted,
     fontSize: 13,
+  },
+  callOrbOuter: {
+    alignSelf: 'center',
+    marginTop: 24,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 1,
+    borderColor: colors.blueDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callOrbInner: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.blue,
+    borderWidth: 2,
+    borderColor: colors.cyan,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.blue,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  callOrbIcon: {
+    color: colors.text,
+    fontSize: 36,
+  },
+  backButton: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  backText: {
+    color: colors.secondary,
+    fontWeight: '700',
+  },
+  emptySectionText: {
+    color: colors.secondary,
+    marginTop: 6,
   },
   notice: {
     marginTop: 10,
-    color: '#52607a',
+    color: colors.secondary,
   },
 });
