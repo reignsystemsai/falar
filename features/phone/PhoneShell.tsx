@@ -735,16 +735,6 @@ export function PhoneShell() {
         {filteredContacts.length ? filteredContacts.map(renderContactRow) : <Text style={styles.emptySectionText}>Add from iPhone Contacts to start calling.</Text>}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       </ScrollView>
-
-      <TouchableOpacity
-        style={styles.importFab}
-        onPress={() => {
-          void openContactPicker();
-        }}
-        disabled={loadingContactPicker}
-      >
-        <Ionicons name={loadingContactPicker ? 'hourglass-outline' : 'add'} size={26} color={colors.text} />
-      </TouchableOpacity>
     </View>
   );
 
@@ -969,11 +959,14 @@ export function PhoneShell() {
         <TouchableOpacity style={styles.navDotButton} onPress={goHome}>
           <Text style={styles.navDotText}>S</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.navDotButton, styles.navDotButtonActive]} onPress={goHome}>
-          <Ionicons name="home-outline" size={16} color={colors.text} />
+        <TouchableOpacity
+          style={[styles.navDotButton, screen === 'home' && styles.navDotButtonActive]}
+          onPress={goHome}
+        >
+          <Ionicons name="home-outline" size={16} color={screen === 'home' ? colors.text : colors.secondary} />
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.navDotButton}
+          style={[styles.navDotButton, screen === 'contacts' && styles.navDotButtonActive]}
           onPress={() => {
             if (screen === 'contacts') {
               void openContactPicker();
@@ -981,8 +974,13 @@ export function PhoneShell() {
             }
             onTabPress('contacts');
           }}
+          disabled={loadingContactPicker}
         >
-          <Ionicons name="add" size={18} color={colors.secondary} />
+          <Ionicons
+            name={screen === 'contacts' ? (loadingContactPicker ? 'hourglass-outline' : 'add') : 'people-outline'}
+            size={18}
+            color={screen === 'contacts' ? colors.text : colors.secondary}
+          />
         </TouchableOpacity>
       </View>
 
@@ -1250,23 +1248,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 96,
-  },
-  importFab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 88,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: colors.blue,
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
   },
   contactRow: {
     minHeight: 66,
