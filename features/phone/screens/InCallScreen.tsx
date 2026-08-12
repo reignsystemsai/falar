@@ -62,14 +62,22 @@ function ActiveRoom({ label, code, onRequestEnd, onConnected }: ActiveRoomProps)
   const toggleSpeaker = async () => {
     if (!speakerSupported) return;
 
-    const nextValue = !speakerEnabled;
-    const output = nextValue ? 'force_speaker' : 'default';
-    await AudioSession.selectAudioOutput(output);
-    setSpeakerEnabled(nextValue);
+    try {
+      const nextValue = !speakerEnabled;
+      const output = nextValue ? 'force_speaker' : 'default';
+      await AudioSession.selectAudioOutput(output);
+      setSpeakerEnabled(nextValue);
+    } catch {
+      setSpeakerEnabled(false);
+    }
   };
 
-  const toggleMute = () => {
-    localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+  const toggleMute = async () => {
+    try {
+      await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+    } catch {
+      // Keep the UI responsive if a track update fails.
+    }
   };
 
   const end = async () => {
