@@ -1,329 +1,190 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { AudioSession } from '@livekit/react-native';
+import * as Contacts from 'expo-contacts';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../../lib/supabase';
-import { getLiveKitToken } from '../../lib/livekit';
-import { InCallScreen } from './screens/InCallScreen';
-import { KeypadScreen } from './screens/KeypadScreen';
 
-function normalizeVisibleCode(value: string): string {
-  return value.replace(/[^\d*#]/g, '');
+type LoadState = 'loading' | 'ready' | 'error';
+
+type DeviceContact = {
+  id: string;
+  name: string;
+  phoneE164: string;
+};
+
+type SpeakContact = DeviceContact & {
+  userId: string;
+};
+
+function normalizeToE164(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const digits = trimmed.replace(/\D/g, '');
+  if (!digits) return null;
+
+  if (trimmed.startsWith('+')) {
+    if (digits.startsWith('1') && digits.length === 11) return `+${digits}`;
+    if (digits.startsWith('57') && digits.length === 12) return `+${digits}`;
+    return null;
+  }
+
+  if (digits.startsWith('001') && digits.length === 13) return `+${digits.slice(2)}`;
+  if (digits.startsWith('0057') && digits.length === 14) return `+${digits.slice(2)}`;
+  if (digits.startsWith('1') && digits.length === 11) return `+${digits}`;
+  if (digits.startsWith('57') && digits.length === 12) return `+${digits}`;
+  if (digits.length === 10 && digits.startsWith('3')) return `+57${digits}`;
+  if (digits.length === 10) return `+1${digits}`;
+
+  return null;
+}
+
+async function ensureSession() {
+  const {
+    data: { session: existingSession },
+  } = await supabase.auth.getSession();
+
+  if (existingSession?.user?.id && existingSession.access_token) {
+    return existingSession;
+  }
+
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error || !data.session || !data.user || !data.session.access_token) {
+    throw new Error('Unable to initialize Speak session.');
+  }
+
+  return data.session;
 }
 
 export function PhoneShell() {
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const mountedRef = useRef(true);
-
-  const [myCode, setMyCode] = useState('------');
-  const [code, setCode] = useState('');
+  const [state, setState] = useState<LoadState>('loading');
   const [notice, setNotice] = useState('');
-  const [outgoing, setOutgoing] = useState<{ peerCode: string; roomName: string } | null>(null);
-  const [incoming, setIncoming] = useState<{ peerCode: string; roomName: string } | null>(null);
+  const [myUserId, setMyUserId] = useState('');
+  const [speakContacts, setSpeakContacts] = useState<SpeakContact[]>([]);
 
-  const [currentCall, setCurrentCall] = useState<{
-    code: string;
-    roomName: string;
-    label: string;
-    phase: 'calling' | 'connecting' | 'active' | 'error';
-    startedAtIso: string;
-    serverUrl?: string;
-    token?: string;
-    errorMessage?: string;
-  } | null>(null);
-
-  const deriveSpeakCode = (value: string): string => {
-    let hash = 0;
-    for (let i = 0; i < value.length; i += 1) {
-      hash = (hash * 31 + value.charCodeAt(i)) % 1000000;
-    }
-    return String(hash).padStart(6, '0');
-  };
-
-  const ensureSession = async () => {
-    const {
-      data: { session: existingSession },
-    } = await supabase.auth.getSession();
-
-    if (existingSession?.access_token && existingSession.user?.id) {
-      return existingSession;
-    }
-
-    const { data, error } = await supabase.auth.signInAnonymously();
-    if (error || !data.session?.access_token || !data.user) {
-      throw new Error('Unable to initialize call session.');
-    }
-
-    return data.session;
-  };
-
-  const sendSignal = async (payload: Record<string, string>) => {
-    if (!channelRef.current) {
-      return;
-    }
-    await channelRef.current.send({ type: 'broadcast', event: 'call', payload });
-  };
-
-  const beginRoomJoin = async (peerCode: string, roomName: string) => {
-    const startedAtIso = new Date().toISOString();
-
-    setCurrentCall({
-      code: peerCode,
-      roomName,
-      label: `Speak ${peerCode}`,
-      phase: 'calling',
-      startedAtIso,
-    });
+  const loadSpeakContacts = async () => {
+    setState('loading');
+    setNotice('');
 
     try {
-      const token = await getLiveKitToken(roomName);
-      await AudioSession.startAudioSession();
+      const session = await ensureSession();
+      setMyUserId(session.user.id);
 
-      if (!mountedRef.current) return;
+      const permission = await Contacts.requestPermissionsAsync();
+      if (permission.status !== 'granted') {
+        throw new Error('Contacts permission denied.');
+      }
 
-      setCurrentCall({
-        code: peerCode,
-        roomName,
-        label: `Speak ${peerCode}`,
-        phase: 'connecting',
-        startedAtIso,
-        serverUrl: token.serverUrl,
-        token: token.participantToken,
+      const result = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.PhoneNumbers],
+        pageSize: 1000,
       });
-    } catch {
-      if (!mountedRef.current) return;
-      setCurrentCall({
-        code: peerCode,
-        roomName,
-        label: `Speak ${peerCode}`,
-        phase: 'error',
-        startedAtIso,
-        errorMessage: 'Unable to start call.',
-      });
+
+      const normalizedByPhone = new Map<string, DeviceContact>();
+
+      for (const contact of result.data) {
+        const sourceName = contact.name?.trim() || 'Unknown';
+        const phones = contact.phoneNumbers ?? [];
+
+        for (const phone of phones) {
+          const raw = typeof phone.number === 'string' ? phone.number : '';
+          const normalized = normalizeToE164(raw);
+          if (!normalized || normalizedByPhone.has(normalized)) {
+            continue;
+          }
+
+          normalizedByPhone.set(normalized, {
+            id: contact.id,
+            name: sourceName,
+            phoneE164: normalized,
+          });
+        }
+      }
+
+      const phoneList = [...normalizedByPhone.keys()];
+      if (phoneList.length === 0) {
+        setSpeakContacts([]);
+        setState('ready');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('user_phone_numbers')
+        .select('user_id, phone_e164, is_active')
+        .in('phone_e164', phoneList)
+        .eq('is_active', true);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const matched = (data ?? [])
+        .map(item => {
+          const local = normalizedByPhone.get(item.phone_e164);
+          if (!local) {
+            return null;
+          }
+
+          return {
+            ...local,
+            userId: item.user_id,
+          } as SpeakContact;
+        })
+        .filter((item): item is SpeakContact => !!item)
+        .filter(item => item.userId !== session.user.id);
+
+      setSpeakContacts(matched);
+      setState('ready');
+    } catch (error) {
+      setState('error');
+      setNotice(error instanceof Error ? error.message : 'Unable to load contacts.');
     }
   };
 
   useEffect(() => {
-    mountedRef.current = true;
-
-    const setup = async () => {
-      const session = await ensureSession();
-      const localCode = deriveSpeakCode(session.user.id);
-
-      if (!mountedRef.current) return;
-      setMyCode(localCode);
-
-      const channel = supabase.channel('speak-phone-calls');
-      channelRef.current = channel;
-
-      channel
-        .on('broadcast', { event: 'call' }, ({ payload }) => {
-          if (!mountedRef.current || !payload || typeof payload !== 'object') {
-            return;
-          }
-
-          const to = typeof payload.to === 'string' ? payload.to : '';
-          const from = typeof payload.from === 'string' ? payload.from : '';
-          const roomName = typeof payload.roomName === 'string' ? payload.roomName : '';
-          const type = typeof payload.type === 'string' ? payload.type : '';
-
-          if (!to || !from || !roomName || to !== localCode) {
-            return;
-          }
-
-          if (type === 'invite') {
-            setIncoming({ peerCode: from, roomName });
-            setNotice('Incoming call');
-            return;
-          }
-
-          if (type === 'answer') {
-            setOutgoing(current => {
-              if (!current || current.peerCode !== from || current.roomName !== roomName) {
-                return current;
-              }
-              void beginRoomJoin(from, roomName);
-              return null;
-            });
-            return;
-          }
-
-          if (type === 'decline') {
-            setOutgoing(current => {
-              if (!current || current.peerCode !== from || current.roomName !== roomName) {
-                return current;
-              }
-              setNotice('Call declined.');
-              return null;
-            });
-            return;
-          }
-
-          if (type === 'end') {
-            setNotice('Call ended.');
-          }
-        })
-        .subscribe();
-    };
-
-    void setup();
-
-    return () => {
-      mountedRef.current = false;
-      if (channelRef.current) {
-        void supabase.removeChannel(channelRef.current);
-      }
-      channelRef.current = null;
-    };
+    void loadSpeakContacts();
   }, []);
-
-  const startCall = async (targetCode: string) => {
-    if (targetCode.length !== 6 || targetCode === myCode) {
-      setNotice('Enter another 6-digit Speak number.');
-      return;
-    }
-
-    const roomName = `speak-${[myCode, targetCode].sort().join('-')}`;
-    setNotice('Calling...');
-    setOutgoing({ peerCode: targetCode, roomName });
-
-    await sendSignal({ type: 'invite', from: myCode, to: targetCode, roomName });
-  };
-
-  const finishCall = async (
-    _number: string,
-    _startedAtIso: string,
-    _durationSeconds: number,
-    result: 'completed' | 'failed' | 'canceled'
-  ) => {
-    if (currentCall) {
-      await sendSignal({
-        type: 'end',
-        from: myCode,
-        to: currentCall.code,
-        roomName: currentCall.roomName,
-      });
-    }
-
-    setCurrentCall(null);
-    setOutgoing(null);
-    setIncoming(null);
-
-    if (result === 'failed') {
-      setNotice('Connection failed.');
-      return;
-    }
-
-    if (result === 'completed') {
-      setNotice('Call ended.');
-      return;
-    }
-
-    setNotice('Call ended.');
-  };
-
-  if (currentCall) {
-    return (
-      <InCallScreen
-        label={currentCall.label}
-        code={currentCall.code}
-        serverUrl={currentCall.serverUrl}
-        token={currentCall.token}
-        phase={currentCall.phase}
-        errorMessage={currentCall.errorMessage}
-        startedAtIso={currentCall.startedAtIso}
-        onFinish={(result, durationSeconds) =>
-          finishCall(currentCall.code, currentCall.startedAtIso, durationSeconds, result)
-        }
-      />
-    );
-  }
-
-  if (incoming) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <Text style={styles.wordmark}>Speak</Text>
-        </View>
-        <View style={styles.contentCenter}>
-          <Text style={styles.incomingTitle}>Incoming Call</Text>
-          <Text style={styles.incomingFrom}>From {incoming.peerCode}</Text>
-          <TouchableOpacity
-            style={styles.answerButton}
-            onPress={async () => {
-              const call = incoming;
-              setIncoming(null);
-              setOutgoing(null);
-              await sendSignal({ type: 'answer', from: myCode, to: call.peerCode, roomName: call.roomName });
-              await beginRoomJoin(call.peerCode, call.roomName);
-            }}
-          >
-            <Text style={styles.answerText}>Answer</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.declineButton}
-            onPress={async () => {
-              const call = incoming;
-              setIncoming(null);
-              await sendSignal({ type: 'decline', from: myCode, to: call.peerCode, roomName: call.roomName });
-              setNotice('Call declined.');
-            }}
-          >
-            <Text style={styles.declineText}>Decline</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (outgoing) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <Text style={styles.wordmark}>Speak</Text>
-        </View>
-        <View style={styles.contentCenter}>
-          <Text style={styles.incomingTitle}>Calling {outgoing.peerCode}</Text>
-          <Text style={styles.incomingFrom}>Waiting for answer...</Text>
-          <TouchableOpacity
-            style={styles.declineButton}
-            onPress={async () => {
-              const call = outgoing;
-              setOutgoing(null);
-              await sendSignal({ type: 'decline', from: myCode, to: call.peerCode, roomName: call.roomName });
-              setNotice('Call canceled.');
-            }}
-          >
-            <Text style={styles.declineText}>End</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const cleanCode = normalizeVisibleCode(code).replace(/\D/g, '').slice(0, 6);
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Text style={styles.wordmark}>Speak</Text>
-        <Text style={styles.localCode}>#{myCode}</Text>
       </View>
 
-      {notice ? (
-        <View style={styles.noticeWrap}>
-          <Text style={styles.noticeText}>{notice}</Text>
+      {state === 'loading' ? (
+        <View style={styles.center}>
+          <ActivityIndicator color="#1a1a2e" />
+          <Text style={styles.status}>Loading contacts...</Text>
         </View>
       ) : null}
 
-      <View style={styles.content}>
-        <KeypadScreen
-          code={cleanCode}
-          onChangeCode={value => setCode(normalizeVisibleCode(value).replace(/\D/g, '').slice(0, 6))}
-          onCall={value => {
-            void startCall(value.replace(/\D/g, '').slice(0, 6));
-          }}
-        />
-      </View>
+      {state === 'error' ? (
+        <View style={styles.center}>
+          <Text style={styles.error}>{notice || 'Unable to load contacts.'}</Text>
+          <TouchableOpacity style={styles.reloadButton} onPress={() => void loadSpeakContacts()}>
+            <Text style={styles.reloadText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {state === 'ready' ? (
+        <View style={styles.content}>
+          <Text style={styles.title}>Speak Contacts</Text>
+          <Text style={styles.subtitle}>Found {speakContacts.length} registered contacts</Text>
+          <ScrollView contentContainerStyle={styles.listWrap}>
+            {speakContacts.map(contact => (
+              <View key={`${contact.userId}-${contact.phoneE164}`} style={styles.row}>
+                <View>
+                  <Text style={styles.name}>{contact.name}</Text>
+                  <Text style={styles.phone}>{contact.phoneE164}</Text>
+                </View>
+                <Text style={styles.badge}>Speak</Text>
+              </View>
+            ))}
+            {speakContacts.length === 0 ? <Text style={styles.empty}>No registered Speak contacts yet.</Text> : null}
+          </ScrollView>
+          <Text style={styles.me}>Session: {myUserId}</Text>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -331,9 +192,6 @@ export function PhoneShell() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 10,
@@ -345,65 +203,83 @@ const styles = StyleSheet.create({
     color: '#1a1a2e',
     fontWeight: '800',
   },
-  localCode: {
-    color: '#334155',
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  status: {
+    marginTop: 12,
+    color: '#475569',
+  },
+  error: {
+    color: '#b42318',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  reloadButton: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 10,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reloadText: {
+    color: '#fff',
     fontWeight: '700',
-    fontSize: 16,
   },
   content: {
     flex: 1,
-  },
-  contentCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  noticeWrap: {
-    backgroundColor: '#f3f4f6',
-    paddingVertical: 8,
     paddingHorizontal: 20,
+    paddingTop: 14,
   },
-  noticeText: {
-    color: '#334155',
-    fontSize: 13,
-  },
-  incomingTitle: {
-    fontSize: 28,
+  title: {
+    fontSize: 20,
     fontWeight: '800',
-    color: '#1a1a2e',
-    marginBottom: 8,
+    color: '#111827',
   },
-  incomingFrom: {
-    fontSize: 16,
+  subtitle: {
+    marginTop: 4,
+    marginBottom: 12,
     color: '#475569',
-    marginBottom: 18,
   },
-  answerButton: {
-    width: 180,
-    minHeight: 48,
-    borderRadius: 10,
-    backgroundColor: '#0f8f4e',
-    alignItems: 'center',
-    justifyContent: 'center',
+  listWrap: {
+    paddingBottom: 30,
+  },
+  row: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     marginBottom: 10,
-  },
-  answerText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  declineButton: {
-    width: 180,
-    minHeight: 48,
-    borderRadius: 10,
-    backgroundColor: '#b42318',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  declineText: {
-    color: '#fff',
-    fontWeight: '700',
+  name: {
+    color: '#111827',
     fontSize: 16,
+    fontWeight: '700',
+  },
+  phone: {
+    color: '#475569',
+    marginTop: 2,
+  },
+  badge: {
+    color: '#0f8f4e',
+    fontWeight: '700',
+  },
+  empty: {
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 30,
+  },
+  me: {
+    marginTop: 8,
+    color: '#94a3b8',
+    fontSize: 12,
   },
 });

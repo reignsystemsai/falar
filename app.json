@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "bitcode": false,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSContactsUsageDescription": "Speak uses your contacts to find people you can call."
       }
     },
     "android": {
@@ -38,6 +39,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-contacts",
       "expo-sqlite",
       "@livekit/react-native-expo-plugin",
       "@config-plugins/react-native-webrtc"
