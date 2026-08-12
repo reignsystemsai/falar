@@ -3,6 +3,7 @@ import { ActivityIndicator, SafeAreaView, StyleSheet, Text, View } from 'react-n
 import { Session } from '@supabase/supabase-js';
 import { setupSupabaseAuthRefresh, supabase } from '../../lib/supabase';
 import { SignInScreen } from './SignInScreen';
+import { ensureSpeakDiscoveryProfile } from './ensureSpeakDiscoveryProfile';
 
 type AuthGateState = 'BOOTING' | 'SIGNED_OUT' | 'SIGNED_IN';
 
@@ -18,12 +19,14 @@ export function AuthGate({ children }: AuthGateProps) {
 
     const bootstrap = async () => {
       const { data } = await supabase.auth.getSession();
+      await ensureSpeakDiscoveryProfile(data.session);
       setState(data.session ? 'SIGNED_IN' : 'SIGNED_OUT');
     };
 
     bootstrap();
 
     const { data: authSubscription } = supabase.auth.onAuthStateChange((_event, session: Session | null) => {
+      void ensureSpeakDiscoveryProfile(session);
       setState(session ? 'SIGNED_IN' : 'SIGNED_OUT');
     });
 
