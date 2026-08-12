@@ -1,5 +1,6 @@
 import { AudioSession } from '@livekit/react-native';
-import { Room } from 'livekit-client';
+import { isKrispNoiseFilterSupported, KrispNoiseFilter } from '@livekit/react-native-krisp-noise-filter';
+import { LocalAudioTrack, Room } from 'livekit-client';
 import { supabase } from '../../../lib/supabase';
 
 export async function connectSpeakRoom(
@@ -51,12 +52,19 @@ export async function connectSpeakRoom(
     data.participant_token
   );
 
-  await room.localParticipant
+  const micPublication = await room.localParticipant
     .setMicrophoneEnabled(true, {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
     });
+
+  // Krisp suppresses background noise on the outbound mic only; it does not
+  // replace the echo cancellation configured above.
+  const micTrack = micPublication?.audioTrack;
+  if (micTrack instanceof LocalAudioTrack && isKrispNoiseFilterSupported()) {
+    await micTrack.setProcessor(KrispNoiseFilter());
+  }
 
   return room;
 }
