@@ -66,8 +66,7 @@ type PhoneScreen =
   | 'contacts'
   | 'detail'
   | 'keypad'
-  | 'profile'
-  | 'phoneSetup';
+  | 'profile';
 
 const { colors, radius } = SpeakPhoneTheme;
 
@@ -109,12 +108,10 @@ export function PhoneShell() {
   const [profilePhone, setProfilePhone] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [didLoadProfile, setDidLoadProfile] = useState(false);
-  const [setupPhone, setSetupPhone] = useState('');
-  const [setupOtp, setSetupOtp] = useState('');
-  const [setupOtpSent, setSetupOtpSent] = useState(false);
-  const [sendingSetupOtp, setSendingSetupOtp] = useState(false);
-  const [verifyingSetupOtp, setVerifyingSetupOtp] = useState(false);
-  const [setupNotice, setSetupNotice] = useState('');
+  const [needsRegistration, setNeedsRegistration] = useState(false);
+  const [registrationName, setRegistrationName] = useState('');
+  const [registrationPhone, setRegistrationPhone] = useState('');
+  const [registrationError, setRegistrationError] = useState('');
 
   const [activeDuration, setActiveDuration] = useState(0);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -201,6 +198,47 @@ export function PhoneShell() {
       void loadSpeakProfile();
     }
   }, [didLoadProfile, screen]);
+
+  const refreshRegistrationState = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    const isComplete = await hasCompleteSpeakDiscoveryProfile(session);
+    setNeedsRegistration(!isComplete);
+
+    if (isComplete || !session?.user) {
+      return;
+    }
+
+    const metadata = session.user.user_metadata as Record<string, unknown> | undefined;
+    if (!registrationName.trim()) {
+      const prefillName =
+        (typeof metadata?.display_name === 'string' ? metadata.display_name : null) ||
+        (typeof metadata?.full_name === 'string' ? metadata.full_name : null) ||
+        (typeof metadata?.name === 'string' ? metadata.name : null) ||
+        session.user.email?.split('@')[0] ||
+        '';
+      if (prefillName) {
+        setRegistrationName(prefillName);
+      }
+    }
+
+    if (!registrationPhone.trim()) {
+      const prefillPhone =
+        (typeof session.user.phone === 'string' ? session.user.phone : null) ||
+        (typeof metadata?.phone === 'string' ? metadata.phone : null) ||
+        (typeof metadata?.phone_number === 'string' ? metadata.phone_number : null) ||
+        '';
+      if (prefillPhone) {
+        setRegistrationPhone(prefillPhone);
+      }
+    }
+  };
+
+  useEffect(() => {
+    void refreshRegistrationState();
+  }, []);
 
   const saveProfile = async () => {
     const userId = await getUserId();
@@ -579,7 +617,8 @@ export function PhoneShell() {
 
     const hasDiscoveryProfile = await hasCompleteSpeakDiscoveryProfile(session);
     if (!hasDiscoveryProfile) {
-      pushScreen('phoneSetup');
+      setRegistrationError('Complete your Speak registration before calling.');
+      goHome();
       return;
     }
 
@@ -604,77 +643,8 @@ export function PhoneShell() {
     });
   };
 
-  const sendPhoneSetupOtp = async () => {
-    if (sendingSetupOtp) {
-      return;
-    }
-
-    const normalized = normalizeSpeakNumber(setupPhone);
-    if (!normalized) {
-      Alert.alert('Country code required', 'Enter your phone with country code, for example +1 555 123 4567.');
-      return;
-    }
-
-    setSendingSetupOtp(true);
-    const { error } = await supabase.auth.updateUser({ phone: normalized });
-    setSendingSetupOtp(false);
-
-    if (error) {
-      Alert.alert('Verification failed', error.message);
-      return;
-    }
-
-    setSetupPhone(normalized);
-    setSetupOtpSent(true);
-    setSetupNotice('OTP sent. Enter the code to verify your phone.');
-  };
-
-  const verifyPhoneSetupOtp = async () => {
-    if (verifyingSetupOtp) {
-      return;
-    }
-
-    const normalized = normalizeSpeakNumber(setupPhone);
-    if (!normalized) {
-      Alert.alert('Country code required', 'Enter your phone with country code.');
-      return;
-    }
-
-    const code = setupOtp.trim();
-    if (!code) {
-      Alert.alert('Code required', 'Enter the OTP code from your SMS.');
-      return;
-    }
-
-    setVerifyingSetupOtp(true);
-    const { error } = await supabase.auth.verifyOtp({
-      phone: normalized,
-      token: code,
-      type: 'phone_change',
-    });
-    setVerifyingSetupOtp(false);
-
-    if (error) {
-      Alert.alert('Verification failed', error.message);
-      return;
-    }
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    await ensureSpeakDiscoveryProfile(session);
-
-    const hasDiscoveryProfile = await hasCompleteSpeakDiscoveryProfile(session);
-    if (!hasDiscoveryProfile) {
-      Alert.alert('Profile incomplete', 'Phone verification succeeded but discovery profile is still incomplete.');
-      return;
-    }
-
-    setSetupOtp('');
-    setSetupOtpSent(false);
-    setSetupNotice('Phone setup complete. You can place Speak calls now.');
-    goBack();
+  const completeSpeakRegistration = async () => {
+    setRegistrationError('Registration save is required in the next step.');
   };
 
   const handleOutgoingBack = async () => {
@@ -976,59 +946,6 @@ export function PhoneShell() {
     </View>
   );
 
-  const phoneSetupView = (
-    <View style={styles.panel}>
-      {renderHeader('Complete phone setup')}
-
-      <View style={styles.profileCard}>
-        <Text style={styles.profileLabel}>Phone setup required</Text>
-        <Text style={styles.contactsSubtitle}>
-          Verify your phone number before placing Speak-to-Speak calls.
-        </Text>
-
-        <Text style={styles.profileLabel}>Phone Number</Text>
-        <TextInput
-          value={setupPhone}
-          onChangeText={setSetupPhone}
-          placeholder="+1 555 123 4567"
-          placeholderTextColor={colors.secondary}
-          style={styles.profileInput}
-          keyboardType="phone-pad"
-        />
-
-        <TouchableOpacity style={styles.profileSaveButton} onPress={() => void sendPhoneSetupOtp()} disabled={sendingSetupOtp}>
-          <Text style={styles.profileSaveText}>{sendingSetupOtp ? 'Sending OTP...' : 'Send OTP'}</Text>
-        </TouchableOpacity>
-
-        {setupOtpSent ? (
-          <>
-            <Text style={styles.profileLabel}>Verification Code</Text>
-            <TextInput
-              value={setupOtp}
-              onChangeText={setSetupOtp}
-              placeholder="123456"
-              placeholderTextColor={colors.secondary}
-              style={styles.profileInput}
-              keyboardType="number-pad"
-            />
-
-            <TouchableOpacity
-              style={styles.profileSaveButton}
-              onPress={() => {
-                void verifyPhoneSetupOtp();
-              }}
-              disabled={verifyingSetupOtp}
-            >
-              <Text style={styles.profileSaveText}>{verifyingSetupOtp ? 'Verifying...' : 'Verify Phone'}</Text>
-            </TouchableOpacity>
-          </>
-        ) : null}
-
-        {setupNotice ? <Text style={styles.notice}>{setupNotice}</Text> : null}
-      </View>
-    </View>
-  );
-
   let content = homeView;
   if (screen === 'contacts') {
     content = contactsView;
@@ -1042,8 +959,6 @@ export function PhoneShell() {
     content = keypadView;
   } else if (screen === 'profile') {
     content = profileView;
-  } else if (screen === 'phoneSetup') {
-    content = phoneSetupView;
   }
 
   const minimizedBanner = callMinimized && phase === 'active' && currentCall ? (
@@ -1119,6 +1034,43 @@ export function PhoneShell() {
       <View style={styles.content}>
         {minimizedBanner}
         {content}
+        {screen === 'home' && needsRegistration ? (
+          <View style={styles.registrationOverlayWrap}>
+            <View style={styles.registrationOverlayCard}>
+              <Text style={styles.registrationOverlayTitle}>Complete your Speak registration</Text>
+              <Text style={styles.registrationOverlaySubtitle}>Add your name and phone to be discoverable on Speak.</Text>
+
+              <TextInput
+                value={registrationName}
+                onChangeText={value => {
+                  setRegistrationName(value);
+                  setRegistrationError('');
+                }}
+                placeholder="Name"
+                placeholderTextColor={colors.secondary}
+                style={styles.profileInput}
+              />
+
+              <TextInput
+                value={registrationPhone}
+                onChangeText={value => {
+                  setRegistrationPhone(value);
+                  setRegistrationError('');
+                }}
+                placeholder="+1 555 123 4567"
+                placeholderTextColor={colors.secondary}
+                style={styles.profileInput}
+                keyboardType="phone-pad"
+              />
+
+              <TouchableOpacity style={styles.profileSaveButton} onPress={() => void completeSpeakRegistration()}>
+                <Text style={styles.profileSaveText}>Join Speak</Text>
+              </TouchableOpacity>
+
+              {registrationError ? <Text style={styles.registrationOverlayError}>{registrationError}</Text> : null}
+            </View>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.tabsWrap}>
@@ -1750,5 +1702,35 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 20,
     fontWeight: '700',
+  },
+  registrationOverlayWrap: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(7, 10, 18, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  registrationOverlayCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: radius.medium,
+    borderWidth: 1,
+    borderColor: 'rgba(98, 232, 255, 0.38)',
+    backgroundColor: 'rgba(14, 20, 34, 0.72)',
+    padding: 14,
+    gap: 10,
+  },
+  registrationOverlayTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  registrationOverlaySubtitle: {
+    color: colors.secondary,
+    lineHeight: 20,
+  },
+  registrationOverlayError: {
+    color: colors.red,
+    marginTop: 2,
   },
 });

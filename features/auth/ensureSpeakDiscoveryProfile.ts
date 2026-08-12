@@ -10,11 +10,14 @@ type SpeakProfileIdentityRow = {
   phone_e164: string | null;
 };
 
-function getVerifiedSessionPhoneE164(session: Session | null): string | null {
-  const rawPhone = typeof session?.user?.phone === 'string' ? session.user.phone : null;
-  const phoneConfirmedAt = (session?.user as { phone_confirmed_at?: string | null } | null)?.phone_confirmed_at;
+function getSessionPhoneE164(session: Session | null): string | null {
+  const metadata = session?.user?.user_metadata as Record<string, unknown> | undefined;
+  const rawPhone =
+    (typeof session?.user?.phone === 'string' ? session.user.phone : null) ||
+    (typeof metadata?.phone === 'string' ? metadata.phone : null) ||
+    (typeof metadata?.phone_number === 'string' ? metadata.phone_number : null);
 
-  if (!rawPhone || !phoneConfirmedAt) {
+  if (!rawPhone) {
     return null;
   }
 
@@ -38,7 +41,7 @@ export async function ensureSpeakDiscoveryProfile(session: Session | null): Prom
     return;
   }
 
-  const normalizedPhone = getVerifiedSessionPhoneE164(session);
+  const normalizedPhone = getSessionPhoneE164(session);
   if (!normalizedPhone) {
     return;
   }
@@ -90,11 +93,6 @@ export async function hasCompleteSpeakDiscoveryProfile(session: Session | null):
     return false;
   }
 
-  const verifiedPhone = getVerifiedSessionPhoneE164(session);
-  if (!verifiedPhone) {
-    return false;
-  }
-
   const { data, error } = await supabase
     .from('speak_profiles')
     .select('phone_e164')
@@ -106,5 +104,5 @@ export async function hasCompleteSpeakDiscoveryProfile(session: Session | null):
   }
 
   const normalized = data?.phone_e164 ? normalizeSpeakNumber(data.phone_e164) : null;
-  return Boolean(normalized && normalized === data?.phone_e164 && normalized === verifiedPhone);
+  return Boolean(normalized && normalized === data?.phone_e164);
 }
