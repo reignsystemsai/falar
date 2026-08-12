@@ -14,6 +14,7 @@
     "expo": "~57.0.12",
     "expo-camera": "~57.0.3",
     "expo-contacts": "~57.0.3",
+    "expo-dev-client": "~57.0.11",
     "expo-linking": "~57.0.5",
     "expo-sqlite": "~57.0.1",
     "expo-status-bar": "~57.0.1",
@@ -28,6 +29,7 @@
   },
   "scripts": {
     "start": "expo start",
+    "start:iphone": "expo start --dev-client --tunnel",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"
